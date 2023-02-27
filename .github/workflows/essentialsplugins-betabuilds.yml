@@ -1,12 +1,17 @@
 name: Branch Build Using Docker
 
 on:
-  push:
-    branches:
-      - feature/*
-      - hotfix/*
-      - release/*
-      - dev*
+  workflow_call:
+    inputs:
+      config-path:
+        required: true
+        type: string
+      branch:
+        required: true
+        type: string
+    secrets:
+      envPAT:
+        required: true
 
 env:
   # Do not edit this, we're just creating it here
@@ -15,15 +20,17 @@ env:
   BUILD_TYPE: Debug
   # Defaults to master as the release branch.  Change as necessary
   RELEASE_BRANCH: main
+
+
 jobs:
   Build_Project:
     runs-on: windows-2019
     steps:
       # First we checkout the source repo
-      - name: Checkout repo
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          ref: ${{ inputs.branch}}
       # Fetch all tags
       - name: Fetch tags
         run: git fetch --tags
