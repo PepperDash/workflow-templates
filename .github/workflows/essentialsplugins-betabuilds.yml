@@ -3,15 +3,9 @@ name: Branch Build Using Docker
 on:
   workflow_call:
     inputs:
-      config-path:
-        required: true
-        type: string
       branch:
         required: true
         type: string
-    secrets:
-      envPAT:
-        required: true
 
 env:
   # Do not edit this, we're just creating it here
