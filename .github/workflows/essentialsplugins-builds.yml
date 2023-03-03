@@ -16,7 +16,7 @@ env:
   # Defaults to debug for build type
   BUILD_TYPE: Debug
   # Defaults to master as the release branch.  Change as necessary
-  RELEASE_BRANCH: main
+  RELEASE_BRANCH: ${{ inputs.defualt-branch }}
 
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
           $phase = ""
           $newVersionString = ""
           switch -regex ($Env:GITHUB_REF) {
-            '^refs\/heads\/${{ inputs.defualt-branch }}*.' {
+            '^refs\/heads\/$($ENV:BUILD_TYPE)*.' {
               $newVersionString = "{0}.{1}.{2}" -f $newVersion.Major, $newVersion.Minor, $newVersion.Build
             }
             '^refs\/heads\/feature\/*.' {
