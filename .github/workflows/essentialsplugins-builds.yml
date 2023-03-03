@@ -26,7 +26,7 @@ jobs:
     steps:
       # First we checkout the source repo
       - name: CheckForRelease
-        if: ${{ inputs.branch }} == @{{ inputs.defualt-branch }}
+        if: ${{ inputs.branch }} == ${{ inputs.defualt-branch }}
         run: |
           echo "BUILD_TYPE=Release" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Checkout
@@ -60,7 +60,7 @@ jobs:
           $phase = ""
           $newVersionString = ""
           switch -regex ($Env:GITHUB_REF) {
-            '^refs\/heads\/main*.' {
+            '^refs\/heads\/${{ inputs.defualt-branch }}*.' {
               $newVersionString = "{0}.{1}.{2}" -f $newVersion.Major, $newVersion.Minor, $newVersion.Build
             }
             '^refs\/heads\/feature\/*.' {
