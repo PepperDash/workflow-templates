@@ -223,7 +223,7 @@ jobs:
           path: ${{env.GITHUB_HOME}}\output\version.txt
       # Create the release on the source repo
       - name: Create Release
-        if:  env.BUILD_TYPE  != "Release" 
+        if:  ${{ env.BUILD_TYPE }}  != "Release" 
         id: create_release
         uses: fleskesvor/create-release@feature/support-target-commitish
         with:
