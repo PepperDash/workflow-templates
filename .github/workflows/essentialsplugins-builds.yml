@@ -25,10 +25,7 @@ jobs:
     runs-on: windows-2019
     steps:
       # First we checkout the source repo
-      - name: CheckForRelease
-        if: ${{ inputs.branch }} == ${{ inputs.defualt-branch }}
-        run: |
-          echo "BUILD_TYPE=Release" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Checkout
         uses: actions/checkout@v3
         with:
@@ -37,6 +34,10 @@ jobs:
       - name: Fetch tags
         run: git fetch --tags
       # Generate the appropriate version number
+      - name: CheckForRelease
+        if: ${{ inputs.branch }} == ${{ inputs.defualt-branch }}
+        run: |
+          echo "BUILD_TYPE=Release" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Set Version Number
         shell: powershell
         run: |
@@ -55,39 +56,45 @@ jobs:
               continue;
             }
           }
-
-          $newVersion = [version]$latestVersion
-          $phase = ""
-          $newVersionString = ""
-          switch -regex ($Env:GITHUB_REF) {
-            '^refs\/heads\/$($ENV:BUILD_TYPE)*.' {
-              $newVersionString = "{0}.{1}.{2}" -f $newVersion.Major, $newVersion.Minor, $newVersion.Build
-            }
-            '^refs\/heads\/feature\/*.' {
-              $phase = 'alpha'
-              $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
-            }
-            '^refs\/heads\/release\/*.' {
-              $splitRef = $Env:GITHUB_REF -split "/"
-              $version = [version]($splitRef[-1] -replace "v", "")
-              $phase = 'rc'
-              $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $version.Major, $version.Minor, $version.Build, $phase, $Env:GITHUB_RUN_NUMBER
-            }
-            '^refs\/heads\/dev*.' {
-              $phase = 'beta'
-              $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
-            }
-            '^refs\/heads\/hotfix\/*.' {
-              $phase = 'hotfix'
-              $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
-            }
-            default {
-              $phase = 'beta'
-              $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
-            }
-            
-          }      
-          echo "VERSION=$newVersionString" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if($($ENV:BUILD_TYPE).contains("Release"))
+          {
+            echo "VERSION=$latestVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+          else
+          {
+            $newVersion = [version]$latestVersion
+            $phase = ""
+            $newVersionString = ""
+            switch -regex ($Env:GITHUB_REF) {
+              '^refs\/heads\/$($ENV:BUILD_TYPE)*.' {
+                $newVersionString = "{0}.{1}.{2}" -f $newVersion.Major, $newVersion.Minor, $newVersion.Build
+              }
+              '^refs\/heads\/feature\/*.' {
+                $phase = 'alpha'
+                $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
+              }
+              '^refs\/heads\/release\/*.' {
+                $splitRef = $Env:GITHUB_REF -split "/"
+                $version = [version]($splitRef[-1] -replace "v", "")
+                $phase = 'rc'
+                $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $version.Major, $version.Minor, $version.Build, $phase, $Env:GITHUB_RUN_NUMBER
+              }
+              '^refs\/heads\/dev*.' {
+                $phase = 'beta'
+                $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
+              }
+              '^refs\/heads\/hotfix\/*.' {
+                $phase = 'hotfix'
+                $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
+              }
+              default {
+                $phase = 'beta'
+                $newVersionString = "{0}.{1}.{2}-{3}-{4}" -f $newVersion.Major, $newVersion.Minor, ($newVersion.Build + 1), $phase, $Env:GITHUB_RUN_NUMBER
+              }
+              
+            }      
+            echo "VERSION=$newVersionString" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
       # Use the version number to set the version of the assemblies
       - name: Update AssemblyInfo.cs
         shell: powershell
