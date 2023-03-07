@@ -223,7 +223,7 @@ jobs:
           path: ${{env.GITHUB_HOME}}\output\version.txt
       # Create the release on the source repo
       - name: Create Release
-        if:  ${{ env.BUILD_TYPE }}  != "Release" 
+        if:  ${{ env.BUILD_TYPE  != 'Release' }}
         id: create_release
         uses: fleskesvor/create-release@feature/support-target-commitish
         with:
@@ -233,7 +233,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Set release url Release
-        if: ${{ env.BUILD_TYPE }} != "Release" 
+        if: ${{ env.BUILD_TYPE  != 'Release' }}
         run: |
           echo "UPLOAD_URL=${{ steps.create_release.outputs.upload_url }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
