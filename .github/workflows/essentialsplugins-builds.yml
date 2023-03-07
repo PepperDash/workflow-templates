@@ -18,6 +18,8 @@ env:
   # Defaults to master as the release branch.  Change as necessary
   RELEASE_BRANCH: ${{ inputs.defualt-branch }}
 
+  UPLOAD_URL: "${{ github.event.release.upload_url }}"
+
 
 jobs:
 
@@ -221,6 +223,7 @@ jobs:
           path: ${{env.GITHUB_HOME}}\output\version.txt
       # Create the release on the source repo
       - name: Create Release
+        if: $ENV:BUILD_TYPE != "Release"
         id: create_release
         uses: fleskesvor/create-release@feature/support-target-commitish
         with:
@@ -229,12 +232,17 @@ jobs:
           prerelease: ${{contains('debug', env.BUILD_TYPE)}}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set release url Release
+        if: $ENV:BUILD_TYPE != "Release"
+        run: |
+          echo "UPLOAD_URL=${{ steps.create_release.outputs.upload_url }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       # Upload the build package to the release
       - name: Upload Release Package
         id: upload_release
         uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ env.UPLOAD_URL}}
           asset_path: ./${{ env.SOLUTION_FILE}}-${{ env.VERSION}}.zip
           asset_name: ${{ env.SOLUTION_FILE}}-${{ env.VERSION}}.zip
           asset_content_type: application/zip
