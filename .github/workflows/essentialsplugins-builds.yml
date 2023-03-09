@@ -38,7 +38,7 @@ jobs:
         run: git fetch --tags
       # Generate the appropriate version number
       - name: CheckForRelease
-        if: ${{ TEST  ==  inputs.defualt-branch }}
+        if: ${{ $env:TEST  ==  inputs.defualt-branch }}
         run: |
           echo "BUILD_TYPE=Release" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Set Version Number
