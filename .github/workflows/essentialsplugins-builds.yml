@@ -255,7 +255,7 @@ jobs:
         uses: actions/download-artifact@v1
         with:
           name: Version
-      - name: Set Version Number
+      - name: Set Version Number  
         shell: powershell
         run: |
           Get-ChildItem "./Version"
@@ -264,6 +264,39 @@ jobs:
           echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Remove-Item -Path ./Version/version.txt
           Remove-Item -Path ./Version
+          # Add this step to remove existing .nuspec files
+      - name: Remove Existing Nuspec Files
+        run: |
+          Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
+      - name: Create Nuspec File
+        shell: powershell
+        run: |
+          $year = (Get-Date).Year
+          $repoName = "${{ github.repository_name }}"
+          $makeModel = ($repoName -split '-')[1..2] -join ''
+          $makeModel = [System.Text.RegularExpressions.Regex]::Replace($makeModel, '(\B[A-Z])', ' $1')
+          $makeModel = $makeModel -replace ' ', ''
+          echo '<?xml version="1.0" encoding="utf-8"?>
+          <package >
+            <metadata>
+              <id>PepperDash.Essentials.Plugin.' + $makeModel + '</id>
+              <version>${{ env.VERSION }}</version>
+              <title>${{ github.repository_name }} EPI</title>
+              <authors>PepperDash Technologies</authors>
+              <owners>pepperdash</owners>
+              <requireLicenseAcceptance>false</requireLicenseAcceptance>
+              <license type="expression">MIT</license>
+              <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
+              <copyright>Copyright ' + $year + '</copyright>
+              <description>${{ github.repository_name }} Epi</description>
+              <tags>crestron 3series 4series</tags>
+              <repository type="git" url="https://github.com/${{ github.repository }}"/>
+            </metadata>
+            <files>
+              <file src="**" target="lib\net35"/>
+              <file src="**" target="lib\net47"/>
+            </files>
+          </package>' > ${{ github.workspace }}\${{ env.NUSPEC_FILE }}.nuspec
       - name: Download Build output
         uses: actions/download-artifact@v1
         with:
