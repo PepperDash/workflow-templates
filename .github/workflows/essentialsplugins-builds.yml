@@ -296,7 +296,7 @@ jobs:
               <file src="**" target="lib\net35"/>
               <file src="**" target="lib\net47"/>
             </files>
-          </package>' > ${{ github.workspace }}\${{ env.NUSPEC_FILE }}.nuspec
+          </package>' > ${{ github.workspace }}\project.nuspec
       - name: Download Build output
         uses: actions/download-artifact@v1
         with:
@@ -326,7 +326,7 @@ jobs:
         run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
       - name: Create nuget package
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
-        run: nuget pack "./${{ env.NUSPEC_FILE}}.nuspec" -version ${{ env.VERSION }}
+        run: nuget pack "./${{env.NUSPEC_FILE}}.nuspec" -version ${{ env.VERSION }}
       # Pushes to internal github registry
       - name: Publish nuget package to Github registry
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
