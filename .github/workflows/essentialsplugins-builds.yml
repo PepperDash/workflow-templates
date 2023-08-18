@@ -268,16 +268,20 @@ jobs:
       - name: Remove Existing Nuspec Files
         run: |
           Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
-
+          
       - name: Create Nuspec File
         shell: powershell
         run: |
           $year = (Get-Date).Year
-          $repoName = "${{ github.repository_name }}"
+          $repoFullName = "${{ github.repository }}" # Full repository name, including owner
+          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
+          Write-Host "Repository Name: $repoName" # Debugging line
           $makeModel = ($repoName -split '-')[1..2] -join ''
+          Write-Host "Make and Model: $makeModel" # Debugging line
           $makeModel = [System.Text.RegularExpressions.Regex]::Replace($makeModel, '(\B[A-Z])', ' $1')
           $makeModel = $makeModel -replace ' ', ''
           $id = "PepperDash.Essentials.Plugin." + $makeModel
+          Write-Host "Final ID: $id" # Debugging line
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>
