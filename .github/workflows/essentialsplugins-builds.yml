@@ -276,18 +276,16 @@ jobs:
           $repoFullName = "${{ github.repository }}" # Full repository name, including owner
           $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
           $makeModel = ($repoName -split '-')[1..2] -join ' ' # Splitting into words
-          $makeModel = (Get-Culture).TextInfo.ToTitleCase($makeModel) # Converting to Title Case
-          $makeModel = $makeModel -replace ' ', '' # Removing spaces
+          $title = (Get-Culture).TextInfo.ToTitleCase($makeModel) + " EPI" # Converting to Title Case and adding " EPI"
+          $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
-          $id = "PepperDash.Essentials.Plugin." + $makeModel
-          Write-Host "Final ID: $id" # Debugging line
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>
             <metadata>
               <id>$id</id>
               <version>${{ env.VERSION }}</version>
-              <title>${{ github.repository_name }} EPI</title>
+              <title>$title</title>
               <authors>PepperDash Technologies</authors>
               <owners>pepperdash</owners>
               <requireLicenseAcceptance>false</requireLicenseAcceptance>
