@@ -326,7 +326,7 @@ jobs:
         run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
       - name: Create nuget package
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
-        run: nuget pack "./${{env.NUSPEC_FILE}}.nuspec" -version ${{ env.VERSION }}
+        run: nuget pack "./project.nuspec" -version ${{ env.VERSION }}  
       # Pushes to internal github registry
       - name: Publish nuget package to Github registry
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
