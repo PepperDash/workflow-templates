@@ -268,7 +268,7 @@ jobs:
       - name: Remove Existing Nuspec Files
         run: |
           Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
-          
+
       - name: Create Nuspec File
         shell: powershell
         run: |
@@ -277,28 +277,32 @@ jobs:
           $makeModel = ($repoName -split '-')[1..2] -join ''
           $makeModel = [System.Text.RegularExpressions.Regex]::Replace($makeModel, '(\B[A-Z])', ' $1')
           $makeModel = $makeModel -replace ' ', ''
-          $nuspecContent = '<?xml version="1.0" encoding="utf-8"?>
-          <package >
+          $id = "PepperDash.Essentials.Plugin." + $makeModel
+          $nuspecContent = @"
+          <?xml version='1.0' encoding='utf-8'?>
+          <package>
             <metadata>
-              <id>PepperDash.Essentials.Plugin.' + $makeModel + '</id>
+              <id>$id</id>
               <version>${{ env.VERSION }}</version>
               <title>${{ github.repository_name }} EPI</title>
               <authors>PepperDash Technologies</authors>
               <owners>pepperdash</owners>
               <requireLicenseAcceptance>false</requireLicenseAcceptance>
-              <license type="expression">MIT</license>
+              <license type='expression'>MIT</license>
               <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
-              <copyright>Copyright ' + $year + '</copyright>
+              <copyright>Copyright $year</copyright>
               <description>${{ github.repository_name }} Epi</description>
               <tags>crestron 3series 4series</tags>
-              <repository type="git" url="https://github.com/${{ github.repository }}"/>
+              <repository type='git' url='https://github.com/${{ github.repository }}'/>
             </metadata>
             <files>
-              <file src="**" target="lib\net35"/>
-              <file src="**" target="lib\net47"/>
+              <file src='**' target='lib\net35'/>
+              <file src='**' target='lib\net47'/>
             </files>
-          </package>'
+          </package>
+          "@
           echo $nuspecContent > ${{ github.workspace }}\project.nuspec
+
 
 
       - name: Download Build output
