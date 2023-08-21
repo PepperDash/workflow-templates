@@ -276,7 +276,7 @@ jobs:
           $repoFullName = "${{ github.repository }}" # Full repository name, including owner
           $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
           $makeModel = ($repoName -split '-')[1..2] -join ' ' # Splitting into words
-          $title = (Get-Culture).TextInfo.ToTitleCase($makeModel) + " EPI" # Converting to Title Case and adding " EPI"
+          $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
           $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
           $nuspecContent = @"
