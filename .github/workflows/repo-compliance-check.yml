@@ -1,0 +1,34 @@
+name: Compliance Check
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs daily at midnight
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mode (debug or production)'
+        required: true
+        default: 'debug'
+
+jobs:
+  check-compliance:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: pip install PyGithub
+
+    - name: Check repositories for compliance
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ORG_NAME: 'your-org-name'
+        MODE: ${{ github.event.inputs.mode }}
+      run: python compliance_check.py
