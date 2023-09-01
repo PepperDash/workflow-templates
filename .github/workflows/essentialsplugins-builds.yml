@@ -255,7 +255,7 @@ jobs:
         uses: actions/download-artifact@v1
         with:
           name: Version
-      - name: Set Version Number
+      - name: Set Version Number  
         shell: powershell
         run: |
           Get-ChildItem "./Version"
@@ -264,6 +264,48 @@ jobs:
           echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Remove-Item -Path ./Version/version.txt
           Remove-Item -Path ./Version
+          # Add this step to remove existing .nuspec files
+      - name: Remove Existing Nuspec Files
+        run: |
+          Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
+
+      - name: Create Nuspec File
+        shell: powershell
+        run: |
+          $year = (Get-Date).Year
+          $repoFullName = "${{ github.repository }}" # Full repository name, including owner
+          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
+          $makeModel = ($repoName -split '-')[1..2] -join ' ' # Splitting into words
+          $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
+          $makeModel = $title -replace ' ', '' # Removing spaces for the ID
+          $id = "PepperDash.Essentials.Plugin." + $makeModel
+          $nuspecContent = @"
+          <?xml version='1.0' encoding='utf-8'?>
+          <package>
+            <metadata>
+              <id>$id</id>
+              <version>${{ env.VERSION }}</version>
+              <title>$title</title>
+              <authors>PepperDash Technologies</authors>
+              <owners>pepperdash</owners>
+              <requireLicenseAcceptance>false</requireLicenseAcceptance>
+              <license type='expression'>MIT</license>
+              <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
+              <copyright>Copyright $year</copyright>
+              <description>${{ github.repository_name }} Epi</description>
+              <tags>crestron 3series 4series</tags>
+              <repository type='git' url='https://github.com/${{ github.repository }}'/>
+            </metadata>
+            <files>
+              <file src='**' target='lib\net35'/>
+              <file src='**' target='lib\net47'/>
+            </files>
+          </package>
+          "@
+          echo $nuspecContent > ${{ github.workspace }}\project.nuspec
+
+
+
       - name: Download Build output
         uses: actions/download-artifact@v1
         with:
@@ -293,7 +335,7 @@ jobs:
         run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
       - name: Create nuget package
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
-        run: nuget pack "./${{ env.NUSPEC_FILE}}.nuspec" -version ${{ env.VERSION }}
+        run: nuget pack "./project.nuspec" -version ${{ env.VERSION }}  
       # Pushes to internal github registry
       - name: Publish nuget package to Github registry
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
