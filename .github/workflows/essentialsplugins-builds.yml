@@ -42,7 +42,7 @@ jobs:
       - name: Set Version Number
         shell: powershell
         run: |
-          $latestVersions = $(git tag --merged origin/main)
+          $latestVersions = $(git tag --merged origin/$env:RELEASE_BRANCH)
           $latestVersion = [version]"0.0.0"
           Foreach ($version in $latestVersions) {
             Write-Host $version
