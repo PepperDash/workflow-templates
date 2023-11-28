@@ -339,7 +339,7 @@ jobs:
       # Pushes to internal github registry
       - name: Publish nuget package to Github registry
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
-        run: nuget push **/*.nupkg -source github
+        run: nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
       # Pushes to nuget gallery
       - name: Add nuget.org API Key
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public' && !contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')
