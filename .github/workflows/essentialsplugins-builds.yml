@@ -208,18 +208,21 @@ jobs:
       # Write the version to a file to be consumed by the push jobs
       - name: Write Version
         run: Write-Output "$($Env:VERSION)" | Out-File -FilePath "$($Env:GITHUB_HOME)\output\version.txt"
+
       # Upload output files
       - name: Upload Build Output
         uses: actions/upload-artifact@v1
         with:
           name: Build
           path: ./${{ env.SOLUTION_FILE}}-${{ env.VERSION}}.zip
+
       # Upload the Version file as an artifact
       - name: Upload version.txt
         uses: actions/upload-artifact@v1
         with:
           name: Version
           path: ${{env.GITHUB_HOME}}\output\version.txt
+
       # Create the release on the source repo
       - name: Create Release
         if:  ${{ env.BUILD_TYPE  != 'Release' }}
@@ -231,6 +234,7 @@ jobs:
           prerelease: ${{contains('debug', env.BUILD_TYPE)}}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set release url Release
         if: ${{ env.BUILD_TYPE  != 'Release' }}
         run: |
@@ -255,6 +259,7 @@ jobs:
         uses: actions/download-artifact@v1
         with:
           name: Version
+
       - name: Set Version Number  
         shell: powershell
         run: |
@@ -265,6 +270,7 @@ jobs:
           Remove-Item -Path ./Version/version.txt
           Remove-Item -Path ./Version
           # Add this step to remove existing .nuspec files
+
       - name: Remove Existing Nuspec Files
         run: |
           Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
@@ -275,7 +281,8 @@ jobs:
           $year = (Get-Date).Year
           $repoFullName = "${{ github.repository }}" # Full repository name, including owner
           $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
-          $makeModel = ($repoName -split '-')[1..2] -join ' ' # Splitting into words
+          $makeModelParts = $repoName -split '-'
+          $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' # Joining all parts after the first dash
           $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
           $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
@@ -303,47 +310,54 @@ jobs:
           </package>
           "@
           echo $nuspecContent > ${{ github.workspace }}\project.nuspec
-
-
-
+  
       - name: Download Build output
         uses: actions/download-artifact@v1
         with:
           name: Build
           path: ./
+
       - name: Unzip Build file
         run: |
           Get-ChildItem .\*.zip | Expand-Archive -DestinationPath .\
           Remove-Item -Path .\*.zip
+
       - name: Copy Files to root & delete output directory
         run: |
           Remove-Item -Path .\* -Include @("*.cpz","*.md","*.cplz","*.json","*.dll","*.clz")  
           Get-ChildItem -Path .\output\* | Copy-Item -Destination .\
           Remove-Item -Path .\output -Recurse
+
       - name: Get nuget File 
         shell: powershell
         run: |
           $nuspec_file = (Get-ChildItem *.nuspec -recurse).BaseName
           echo "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       # Pulls the nuget builder packages
       - name: Add nuget.exe
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
         uses: nuget/setup-nuget@v1
+        
       # Creating nuget Packages
       - name: Add Github Packages source
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
         run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+    
       - name: Create nuget package
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
         run: nuget pack "./project.nuspec" -version ${{ env.VERSION }}  
       # Pushes to internal github registry
+          
       - name: Publish nuget package to Github registry
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
-        run: nuget push **/*.nupkg -source github
+        run: nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
       # Pushes to nuget gallery
+
       - name: Add nuget.org API Key
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public' && !contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')
         run: nuget setApiKey ${{ secrets.NUGET_API_KEY }}
+
       - name: Publish nuget package to nuget.org
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public' && !contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')
         run: nuget push **/*.nupkg -Source https://api.nuget.org/v3/index.json
