@@ -11,34 +11,26 @@ on:
         type: string
 
 env:
-  # Do not edit this, we're just creating it here
   VERSION: 0.0.0-buildtype-buildnumber
-  # Defaults to debug for build type
   BUILD_TYPE: Debug
-  # Defaults to master as the release branch.  Change as necessary
   RELEASE_BRANCH: ${{ inputs.default-branch }}
   UPLOAD_URL: "${{ github.event.release.upload_url }}"
-
 
 jobs:
 
   Build_Project:
     runs-on: windows-2019
     steps:
-      # First we checkout the source repo
-
       - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ inputs.branch }}
-      # Fetch all tags
+        uses: actions/checkout@v3 # Check for the latest version supporting Node.js 20
+
       - name: Fetch tags
         run: git fetch --tags
-      # Generate the appropriate version number
+
       - name: CheckForRelease
-        if: ${{ inputs.branch  ==  inputs.default-branch }}
-        run: |
-          echo "BUILD_TYPE=Release" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        if: ${{ inputs.branch == inputs.default-branch }}
+        run: echo "BUILD_TYPE=Release" >> $GITHUB_ENV
+
       - name: Set Version Number
         shell: powershell
         run: |
@@ -137,9 +129,10 @@ jobs:
               Write-Output " ";
               Write-Output "Unable to apply version to AssemblyInfo.cs files";
           }
+
       - name: restore Nuget Packages
         run: nuget install .\packages.config -OutputDirectory .\packages -ExcludeVersion
-      # Set the SOLUTION_PATH
+
       - name: Get SLN Path 
         shell: powershell
         run: |
@@ -148,24 +141,24 @@ jobs:
           $solution_path = $solution_path -replace "(?:[^\\]*\\){4}", ""
           Write-Output $solution_path
           echo "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        # Set the SOLUTION_FILE
+
       - name: Get SLN File 
         shell: powershell
         run: |
           $solution_file = Get-ChildItem .\*.sln -recurse -Path "$($Env:GITHUB_WORKSPACE)" 
           echo "SOLUTION_FILE=$($solution_file.BaseName)"| Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      # Login to Docker
+
       - name: Login to Docker
         uses: azure/docker-login@v1
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      # Build the solutions in the docker image
+
       - name: Build Solution
         shell: powershell
         run: | 
           Invoke-Expression "docker run --rm --mount type=bind,source=""$($Env:GITHUB_WORKSPACE)"",target=""c:/project"" pepperdash/sspbuilder c:\cihelpers\vsidebuild.exe -Solution ""c:\project\$($Env:SOLUTION_PATH)"" -BuildSolutionConfiguration $($ENV:BUILD_TYPE)"
-      # Zip up the output files as needed
+
       - name: Zip Build Output
         shell: powershell
         run: |
@@ -205,48 +198,45 @@ jobs:
           Compress-Archive -Path $destination -DestinationPath "$($Env:GITHUB_WORKSPACE)\$($Env:SOLUTION_FILE)-$($Env:VERSION).zip" -Force
           Write-Host "Output Contents post Zip"
           Get-ChildItem -Path $destination
-      # Write the version to a file to be consumed by the push jobs
+
       - name: Write Version
-        run: Write-Output "$($Env:VERSION)" | Out-File -FilePath "$($Env:GITHUB_HOME)\output\version.txt"
-      # Upload output files
+        run: echo "VERSION=${{ env.VERSION }}" >> $GITHUB_ENV
+  
       - name: Upload Build Output
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v2 # Updated to v2
         with:
           name: Build
-          path: ./${{ env.SOLUTION_FILE}}-${{ env.VERSION}}.zip
-      # Upload the Version file as an artifact
+          path: ./${{ env.SOLUTION_FILE }}-${{ env.VERSION }}.zip
+
       - name: Upload version.txt
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v2 # Updated to v2
         with:
           name: Version
-          path: ${{env.GITHUB_HOME}}\output\version.txt
-      # Create the release on the source repo
-      - name: Create Release
-        if:  ${{ env.BUILD_TYPE  != 'Release' }}
-        id: create_release
-        uses: fleskesvor/create-release@feature/support-target-commitish
-        with:
-          tag_name: ${{ env.VERSION  }}
-          release_name: ${{ env.VERSION }}
-          prerelease: ${{contains('debug', env.BUILD_TYPE)}}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Set release url Release
-        if: ${{ env.BUILD_TYPE  != 'Release' }}
-        run: |
-          echo "UPLOAD_URL=${{ steps.create_release.outputs.upload_url }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          path: ${{ env.GITHUB_HOME }}/output/version.txt
 
-      # Upload the build package to the release
-      - name: Upload Release Package
-        id: upload_release
-        uses: actions/upload-release-asset@v1
+
+      - name: Create Release
+        if: ${{ env.BUILD_TYPE != 'Release' }}
+        id: create_release
+        uses: actions/create-release@v1 # Updated to a compatible version or alternative
         with:
-          upload_url: ${{ env.UPLOAD_URL}}
-          asset_path: ./${{ env.SOLUTION_FILE}}-${{ env.VERSION}}.zip
-          asset_name: ${{ env.SOLUTION_FILE}}-${{ env.VERSION}}.zip
-          asset_content_type: application/zip
+          tag_name: ${{ env.VERSION }}
+          release_name: ${{ env.VERSION }}
+          prerelease: ${{ contains('debug', env.BUILD_TYPE) }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set release url Release
+        run: echo "UPLOAD_URL=${{ steps.create_release.outputs.upload_url }}" >> $GITHUB_ENV
+
+      - name: Upload Release Package
+        uses: actions/upload-release-asset@v1 # Check for an updated version supporting Node.js 20
+        with:
+          upload_url: ${{ env.UPLOAD_URL }}
+          asset_path: ./${{ env.SOLUTION_FILE }}-${{ env.VERSION }}.zip
+          asset_name: ${{ env.SOLUTION_FILE }}-${{ env.VERSION }}.zip
+          asset_content_type: application/zip
+
   Push_Nuget_Package:
     needs: Build_Project
     runs-on: windows-2019
@@ -255,6 +245,7 @@ jobs:
         uses: actions/download-artifact@v1
         with:
           name: Version
+
       - name: Set Version Number  
         shell: powershell
         run: |
@@ -311,39 +302,50 @@ jobs:
         with:
           name: Build
           path: ./
+      
       - name: Unzip Build file
         run: |
           Get-ChildItem .\*.zip | Expand-Archive -DestinationPath .\
           Remove-Item -Path .\*.zip
+      
       - name: Copy Files to root & delete output directory
         run: |
           Remove-Item -Path .\* -Include @("*.cpz","*.md","*.cplz","*.json","*.dll","*.clz")  
           Get-ChildItem -Path .\output\* | Copy-Item -Destination .\
           Remove-Item -Path .\output -Recurse
-      - name: Get nuget File 
+      
+      -  name: Get nuget File 
         shell: powershell
         run: |
           $nuspec_file = (Get-ChildItem *.nuspec -recurse).BaseName
           echo "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      # Pulls the nuget builder packages
+      
+          # Pulls the nuget builder packages
       - name: Add nuget.exe
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
         uses: nuget/setup-nuget@v1
+
       # Creating nuget Packages
       - name: Add Github Packages source
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
         run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Create nuget package
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
         run: nuget pack "./project.nuspec" -version ${{ env.VERSION }}  
       # Pushes to internal github registry
+    
       - name: Publish nuget package to Github registry
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
         run: nuget push **/*.nupkg -source github
       # Pushes to nuget gallery
+    
       - name: Add nuget.org API Key
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public' && !contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')
         run: nuget setApiKey ${{ secrets.NUGET_API_KEY }}
+
       - name: Publish nuget package to nuget.org
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public' && !contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')
         run: nuget push **/*.nupkg -Source https://api.nuget.org/v3/index.json
+
+    
