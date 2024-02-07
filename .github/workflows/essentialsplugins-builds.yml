@@ -256,6 +256,7 @@ jobs:
           Remove-Item -Path ./Version/version.txt
           Remove-Item -Path ./Version
           # Add this step to remove existing .nuspec files
+
       - name: Remove Existing Nuspec Files
         run: |
           Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
@@ -266,7 +267,8 @@ jobs:
           $year = (Get-Date).Year
           $repoFullName = "${{ github.repository }}" # Full repository name, including owner
           $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
-          $makeModel = ($repoName -split '-')[1..2] -join ' ' # Splitting into words
+          $makeModelParts = $repoName -split '-'
+          $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' # Joining all parts after the first dash
           $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
           $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
@@ -294,9 +296,7 @@ jobs:
           </package>
           "@
           echo $nuspecContent > ${{ github.workspace }}\project.nuspec
-
-
-
+  
       - name: Download Build output
         uses: actions/download-artifact@v1
         with:
@@ -313,8 +313,8 @@ jobs:
           Remove-Item -Path .\* -Include @("*.cpz","*.md","*.cplz","*.json","*.dll","*.clz")  
           Get-ChildItem -Path .\output\* | Copy-Item -Destination .\
           Remove-Item -Path .\output -Recurse
-      
-      -  name: Get nuget File 
+
+      - name: Get nuget File 
         shell: powershell
         run: |
           $nuspec_file = (Get-ChildItem *.nuspec -recurse).BaseName
@@ -337,7 +337,7 @@ jobs:
     
       - name: Publish nuget package to Github registry
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
-        run: nuget push **/*.nupkg -source github
+        run: nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
       # Pushes to nuget gallery
     
       - name: Add nuget.org API Key
