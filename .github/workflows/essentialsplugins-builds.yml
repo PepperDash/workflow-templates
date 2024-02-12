@@ -237,6 +237,8 @@ jobs:
           asset_path: ./${{ env.SOLUTION_FILE }}-${{ env.VERSION }}.zip
           asset_name: ${{ env.SOLUTION_FILE }}-${{ env.VERSION }}.zip
           asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   Push_Nuget_Package:
     needs: Build_Project
