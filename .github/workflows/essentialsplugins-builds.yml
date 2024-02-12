@@ -22,7 +22,7 @@ jobs:
     runs-on: windows-2019
     steps:
       - name: Checkout
-        uses: actions/checkout@v3 # Check for the latest version supporting Node.js 20
+        uses: actions/checkout@v4 
 
       - name: Fetch tags
         run: git fetch --tags
@@ -203,13 +203,13 @@ jobs:
         run: echo "VERSION=${{ env.VERSION }}" >> $GITHUB_ENV
   
       - name: Upload Build Output
-        uses: actions/upload-artifact@v2 # Updated to v2
+        uses: actions/upload-artifact@v4.3.1 
         with:
           name: Build
           path: ./${{ env.SOLUTION_FILE }}-${{ env.VERSION }}.zip
 
       - name: Upload version.txt
-        uses: actions/upload-artifact@v2 # Updated to v2
+        uses: actions/upload-artifact@v4.3.1 
         with:
           name: Version
           path: ${{ env.GITHUB_HOME }}/output/version.txt
