@@ -68,8 +68,8 @@ jobs:
         with:
           allowUpdates: true
           artifacts: 'output\*.*(cpz|cplz)'      
-          prerelease: ${{ needs.GetVersionNumber.outputs.channel != '' }}
-          tag: ${{ needs.GetVersionNumber.outputs.tag }}
+          prerelease: ${{ inputs.channel != '' }}
+          tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
       - name: Setup Nuget
