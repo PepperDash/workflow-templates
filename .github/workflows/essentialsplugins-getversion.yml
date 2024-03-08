@@ -1,14 +1,7 @@
 name: Essentials Plugin Build Get Version
 
 on:
-  workflow_call:
-    inputs:
-      branch:
-        required: true
-        type: string
-      default-branch: 
-        required: true
-        type: string 
+  workflow_call
 jobs:
   GetVersionNumber:
     runs-on: ubuntu-latest
