@@ -1,7 +1,20 @@
 name: Essentials Plugin Build Get Version
 
 on:
-  workflow_call
+  workflow_call:
+    outputs:
+      version:
+        description: 'The version of the workflow'
+        value: ${{ jobs.get_version.outputs.version }}
+      tag:
+        description: 'The tag of the workflow'
+        value: ${{ jobs.get_version.outputs.tag }}
+      newVersion:
+        description: 'Was a new version generated?'
+        value: ${{ jobs.get_version.outputs.newVersion }}
+      channel:
+        description: 'The channel of the workflow'
+        value: ${{ jobs.get_version.outputs.channel }}
 jobs:
   GetVersionNumber:
     runs-on: ubuntu-latest
