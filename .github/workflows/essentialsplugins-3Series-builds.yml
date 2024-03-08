@@ -1,4 +1,4 @@
-name: Essentials Plugin Build 4-Series
+name: Essentials Plugin Build 3-Series
 
 on:
   workflow_call:
