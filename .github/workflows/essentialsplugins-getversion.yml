@@ -5,16 +5,16 @@ on:
     outputs:
       version:
         description: 'The version of the workflow'
-        value: ${{ jobs.get_version.outputs.version }}
+        value: ${{ jobs.GetVersionNumber.outputs.version }}
       tag:
         description: 'The tag of the workflow'
-        value: ${{ jobs.get_version.outputs.tag }}
+        value: ${{ jobs.GetVersionNumber.outputs.tag }}
       newVersion:
         description: 'Was a new version generated?'
-        value: ${{ jobs.get_version.outputs.newVersion }}
+        value: ${{ jobs.GetVersionNumber.outputs.newVersion }}
       channel:
         description: 'The channel of the workflow'
-        value: ${{ jobs.get_version.outputs.channel }}
+        value: ${{ jobs.GetVersionNumber.outputs.channel }}
 jobs:
   GetVersionNumber:
     runs-on: ubuntu-latest
