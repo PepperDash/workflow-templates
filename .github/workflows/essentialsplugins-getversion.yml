@@ -9,6 +9,7 @@ on:
       default-branch: 
         required: true
         type: string 
+jobs:
   GetVersionNumber:
     runs-on: ubuntu-latest
     outputs:
