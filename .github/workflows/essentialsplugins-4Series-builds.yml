@@ -49,7 +49,7 @@ jobs:
       - name: Build Solution        
         run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" -m   
       - name: Get release notes
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: change-log
       - name: Upload Release
