@@ -21,17 +21,7 @@ on:
         type: string 
       
 env:
-  # solution path needs slashes (use \). When solution file name and path are put together, it should be a valid path
-  # If Solution is in repo root, leave SOLUTION_PATH empty
-  # solution name does not include extension. .sln is assumed
-  SOLUTION_PATH: 3-series\
-  SOLUTION_FILE: epi-essentials-mobile-control
-  # Do not edit this, we're just creating it here
-  VERSION: 0.0.0-buildtype-buildnumber
-  # Defaults to debug for build type
-  BUILD_TYPE: Release
-  # Defaults to master as the release branch.  Change as necessary
-  RELEASE_BRANCH: main
+  BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
 jobs:
   Build_Project_4-Series:
     runs-on: windows-latest
@@ -57,7 +47,7 @@ jobs:
       - name: restore Nuget Packages
         run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
       - name: Build Solution        
-        run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="Debug" /p:Version="${{ inputs.version }}" -m   
+        run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" -m   
       - name: Get release notes
         uses: actions/download-artifact@v3
         with:
