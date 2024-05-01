@@ -210,7 +210,7 @@ jobs:
           
       - name: Publish nuget package to Github registry
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        run: nuget push ./*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+        run: nuget push *.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
       # Pushes to nuget gallery
       - name: Add nuget.org API Key
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public' && !contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')
@@ -218,7 +218,7 @@ jobs:
 
       - name: Publish nuget package to nuget.org
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public' && !contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')
-        run: nuget push **/*.nupkg -Source https://api.nuget.org/v3/index.json
+        run: nuget push *.nupkg -Source https://api.nuget.org/v3/index.json
       # Create the release on the source repo
       - name: Get release notes
         uses: actions/download-artifact@v4
