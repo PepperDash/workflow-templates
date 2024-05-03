@@ -57,6 +57,8 @@ jobs:
       run: npx --package=semantic-release --package=@semantic-release/commit-analyzer --package=@semantic-release/release-notes-generator --package=@semantic-release/changelog --package=@semantic-release/exec -- semantic-release
     - name: Print summary if no new version
       if: steps.get_version.outputs.newVersion != 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN}}
       run: |          
         echo "# Summary" >> $GITHUB_STEP_SUMMARY
         echo "No new version generated" >> $GITHUB_STEP_SUMMARY
