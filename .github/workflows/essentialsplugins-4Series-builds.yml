@@ -47,7 +47,7 @@ jobs:
       - name: restore Nuget Packages
         run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
       - name: Build Solution        
-        run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" -m   
+        run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m   
       - name: Get release notes
         uses: actions/download-artifact@v4
         with:
