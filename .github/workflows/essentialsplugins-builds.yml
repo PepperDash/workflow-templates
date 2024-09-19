@@ -337,7 +337,7 @@ jobs:
       # Pulls the nuget builder packages
       - name: Add nuget.exe
         if: "!contains(env.NUSPEC_FILE, 'EssentialsPluginTemplate')"
-        uses: nuget/setup-nuget@v4
+        uses: nuget/setup-nuget@v2
         
       # Creating nuget Packages
       - name: Add Github Packages source
