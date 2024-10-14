@@ -83,8 +83,7 @@ jobs:
       
           # Compare the actual package name with the expected name
           if ($packageName -ne $expectedPackageName) {
-            Write-Error "Package name mismatch: Expected '$expectedPackageName' but found '$packageName'."
-            Write-Output "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
+            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
             exit 1
           }
       - name: Upload Release
