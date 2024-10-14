@@ -66,27 +66,27 @@ jobs:
       - name: Remove Existing Nuspec Files
         run: |
           Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
-          - name: Create Nuspec File
-            shell: powershell
-            run: |
-              $year = (Get-Date).Year
-              $repoFullName = "${{ github.repository }}" # Full repository name, including owner
-              $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
-              $makeModelParts = $repoName -split '-'
-              $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' # Joining all parts after the first dash
-              $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
-              $makeModel = $title -replace ' ', '' # Removing spaces for the ID
-              $id = "PepperDash.Essentials.Plugin." + $makeModel
-              $nuspecContent = @"
-              <?xml version='1.0' encoding='utf-8'?>
-              <package>
-                <metadata>
-                  <id>$id</id>
-                  <version>${{ inputs.version }}</version>
-                  <title>$title</title>
-                  <authors>PepperDash Technologies</authors>
-                  <owners>pepperdash</owners>
-                  <requireLicenseAcceptance>false</requireLicenseAcceptance>
+      - name: Create Nuspec File
+        shell: powershell
+        run: |
+          $year = (Get-Date).Year
+          $repoFullName = "${{ github.repository }}" # Full repository name, including owner
+          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
+          $makeModelParts = $repoName -split '-'
+          $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' # Joining all parts after the first dash
+          $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
+          $makeModel = $title -replace ' ', '' # Removing spaces for the ID
+          $id = "PepperDash.Essentials.Plugin." + $makeModel
+          $nuspecContent = @"
+          <?xml version='1.0' encoding='utf-8'?>
+          <package>
+            <metadata>
+              <id>$id</id>
+              <version>${{ inputs.version }}</version>
+              <title>$title</title>
+              <authors>PepperDash Technologies</authors>
+              <owners>pepperdash</owners>
+              <requireLicenseAcceptance>false</requireLicenseAcceptance>
               <license type='expression'>MIT</license>
               <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
               <copyright>Copyright $year</copyright>
