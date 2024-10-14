@@ -4,21 +4,25 @@ on:
   workflow_call:
     inputs:
       newVersion:
-        description: 'new version?'
+        description: 'New version?'
         required: true
         type: string
       version:
-        description: 'The version of the file to build and push'
+        description: 'The version of the file to build and push.'
         required: true
         type: string
       tag:
-        description: 'The tag of the image to build and push'
+        description: 'The tag of the image to build and push.'
         required: true
         type: string
       channel:
-        description: 'The channel of the image to build and push'
+        description: 'The channel of the image to build and push.'
         required: true
-        type: string 
+        type: string
+      bypassPackageCheck:
+        description: 'Set to true to bypass the package name check.'
+        required: false
+        type: boolean
       
 env:
   BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
