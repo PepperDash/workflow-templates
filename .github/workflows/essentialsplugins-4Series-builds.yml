@@ -73,7 +73,9 @@ jobs:
           # Locate the generated NuGet package in the output directory
           $packageFile = Get-ChildItem -Path .\output -Filter *.nupkg -Recurse
           if ($null -eq $packageFile) {
-            throw "No NuGet package found in output directory."
+            Write-Error "No NuGet package found in the output directory."
+            Write-Output "::error::No NuGet package found in the output directory. Please check if the build generated the package correctly."
+            exit 1
           }
       
           # Extract the package name from the file
@@ -81,7 +83,9 @@ jobs:
       
           # Compare the actual package name with the expected name
           if ($packageName -ne $expectedPackageName) {
-            throw "Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
+            Write-Error "Package name mismatch: Expected '$expectedPackageName' but found '$packageName'."
+            Write-Output "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
+            exit 1
           }
       - name: Upload Release
         if: ${{ inputs.newVersion == 'true' }}
