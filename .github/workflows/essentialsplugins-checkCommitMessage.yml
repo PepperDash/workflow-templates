@@ -19,14 +19,14 @@ jobs:
       - name: Check Commit Message
         shell: bash
         run: |
-          # Retrieve the commit messages
-          COMMIT_MSGS=$(git log -n 10 --pretty=format:"%s" HEAD^..HEAD)
-          
+          # Retrieve the commit message from the latest commit
+          COMMIT_MSGS=$(git log -1 --pretty=format:"%s")
+      
           # Define a regular expression to match the conventional commit pattern
-          CONVENTIONAL_REGEX="^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert|wip)(\(.+\))?:\s.+"
-          
+          CONVENTIONAL_REGEX="^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert|wip)(\\(.+\\))?:\\s.+"
+      
           # Loop through each commit message and check against the conventional pattern
-          for COMMIT_MSG in $COMMIT_MSGS; do
+          for COMMIT_MSG in "$COMMIT_MSGS"; do
             if [[ ! $COMMIT_MSG =~ $CONVENTIONAL_REGEX ]]; then
               echo "::error::Commit message '$COMMIT_MSG' does not follow the Conventional Commits format. Please use a message like 'feat: add new feature' or 'fix(scope): correct issue'."
               exit 1
