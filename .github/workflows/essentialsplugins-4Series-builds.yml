@@ -57,15 +57,14 @@ jobs:
         with:
           name: change-log
       - name: Check Package Name
-        if: ${{ inputs.bypassPackageCheck != 'true' }}
         shell: powershell
         run: |
           # Extract the repository name
           $repoFullName = "${{ github.repository }}" # Full repository name, including owner
           $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
       
-          # Expected package name format: PepperDash.Essentials.Make.Model
-          $expectedPackageName = "PepperDash.Essentials." + ($repoName -replace 'epi-', '').Replace('-', '.')
+          # Expected package name format: PepperDash.Essentials.Plugins.Make.Model
+          $expectedPackageName = "PepperDash.Essentials.Plugins." + ($repoName -replace 'epi-', '').Replace('-', '.')
       
           # Display expected package name
           Write-Output "Expected Package Name: $expectedPackageName"
@@ -78,11 +77,11 @@ jobs:
             exit 1
           }
       
-          # Extract the package name from the file
-          $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName)
+          # Extract the package name from the file (ignore version)
+          $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
       
-          # Compare the actual package name with the expected name
-          if ($packageName -ne $expectedPackageName) {
+          # Compare the actual package name with the expected name (case insensitive)
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
             echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
             exit 1
           }
