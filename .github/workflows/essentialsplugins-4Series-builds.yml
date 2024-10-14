@@ -57,6 +57,7 @@ jobs:
         with:
           name: change-log
       - name: Check Package Name
+        if: ${{ inputs.bypassPackageCheck != 'true' }}
         shell: powershell
         run: |
           # Extract the repository name
