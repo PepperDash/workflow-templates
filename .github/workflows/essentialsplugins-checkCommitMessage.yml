@@ -19,15 +19,15 @@ jobs:
       - name: Check Commit Messages
         shell: bash
         run: |
-          # Retrieve all commit messages from the current merge (HEAD~1..HEAD for merge commit or all in a PR)
-          COMMIT_MSGS=$(git log --pretty=format:"%s" HEAD~1..HEAD)
-      
+          # Retrieve the last commit messages. For merge commits, it will retrieve the latest commit message.
+          COMMIT_MSGS=$(git log --pretty=format:"%s" -n 1)
+        
           # Define a regular expression to match the conventional commit pattern or a standard merge commit message
           CONVENTIONAL_REGEX="^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert|wip)(\\(.+\\))?:\\s.+"
           MERGE_COMMIT_REGEX="^Merge (branch|remote-tracking branch) '.*'( into .*)?$"
-      
+        
           # Loop through each commit message and check against the patterns
-          for COMMIT_MSG in $COMMIT_MSGS; do
+          for COMMIT_MSG in "$COMMIT_MSGS"; do
             if [[ ! $COMMIT_MSG =~ $CONVENTIONAL_REGEX && ! $COMMIT_MSG =~ $MERGE_COMMIT_REGEX ]]; then
               echo "::error::Commit message '$COMMIT_MSG' does not follow the Conventional Commits format or merge commit format. Please use a message like 'feat: add new feature' or 'fix(scope): correct issue'."
               exit 1
