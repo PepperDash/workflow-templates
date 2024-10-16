@@ -425,14 +425,14 @@ if __name__ == "__main__":
     readme_content = read_readme_file(readme_path)
 
     # Update or insert sections with section titles handled in the content
-    readme_content = update_readme_section(readme_content, "Interfaces Implemented", interfaces_markdown)
-    readme_content = update_readme_section(readme_content, "Base Classes", base_classes_markdown)
-    readme_content = update_readme_section(readme_content, "Supported Types", supported_types_markdown)
     readme_content = update_readme_section(readme_content, "Minimum Essentials Framework Versions", minimum_versions_markdown)
-    readme_content = update_readme_section(readme_content, "Public Methods", public_methods_markdown)
-    readme_content = update_readme_section(readme_content, "Join Maps", join_maps_markdown)
     if config_example_markdown:
         readme_content = update_readme_section(readme_content, "Config Example", config_example_markdown)
+    readme_content = update_readme_section(readme_content, "Supported Types", supported_types_markdown)
+    readme_content = update_readme_section(readme_content, "Join Maps", join_maps_markdown)
+    readme_content = update_readme_section(readme_content, "Interfaces Implemented", interfaces_markdown)
+    readme_content = update_readme_section(readme_content, "Base Classes", base_classes_markdown)
+    readme_content = update_readme_section(readme_content, "Public Methods", public_methods_markdown)
 
     # Write the updated content back to README.md
     with open(readme_path, 'w', encoding='utf-8') as f:
