@@ -175,6 +175,7 @@ jobs:
           echo "Make/Model: $makeModel"
           echo "Title: $title"
           echo "ID: $id"
+          echo "Owner: ${{ github.repository_owner }}"
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>

@@ -175,6 +175,7 @@ jobs:
           echo "Make/Model: $makeModel"
           echo "Title: $title"
           echo "ID: $id"
+          echo "Owner: ${{ github.repository_owner }}"
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>
@@ -216,7 +217,8 @@ jobs:
         # Creating nuget Packages
       - name: Add Github Packages source
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+        # run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+        run: nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
     
       - name: Create nuget package
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
