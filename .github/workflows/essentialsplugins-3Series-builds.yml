@@ -217,7 +217,6 @@ jobs:
         # Creating nuget Packages
       - name: Add Github Packages source
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        # run: nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
         run: nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
     
       - name: Create nuget package
