@@ -163,13 +163,18 @@ jobs:
         shell: powershell
         run: |
           $year = (Get-Date).Year
-          $repoFullName = "${{ github.repository }}" # Full repository name, including owner
+          $repoFullName = "${{ github.repository }}" # Full repository name, including owner          
           $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
           $makeModelParts = $repoName -split '-'
-          $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' # Joining all parts after the first dash
+          $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' # Joining all parts after the first dash          
           $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
           $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
+          echo "Repo: $repoFullName"
+          echo "Repo Name: $repoName"
+          echo "Make/Model: $makeModel"
+          echo "Title: $title"
+          echo "ID: $id"
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>

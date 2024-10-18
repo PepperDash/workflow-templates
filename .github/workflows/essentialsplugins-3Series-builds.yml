@@ -170,6 +170,11 @@ jobs:
           $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
           $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
+          echo "Repo: $repoFullName"
+          echo "Repo Name: $repoName"
+          echo "Make/Model: $makeModel"
+          echo "Title: $title"
+          echo "ID: $id"
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>
