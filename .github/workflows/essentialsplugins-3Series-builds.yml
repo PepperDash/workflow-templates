@@ -126,7 +126,7 @@ jobs:
           $exclusions = "packages"
           # Trying to get any .json schema files (not currently working)
           # Gets any files with the listed extensions.
-          Get-ChildItem -recurse -Path "$($Env:GITHUB_WORKSPACE)" -include "*.clz", "*.cpz", "*.cplz", "*.nuspec", "*.md" | ForEach-Object {
+          Get-ChildItem -recurse -Path "$($Env:GITHUB_WORKSPACE)\src" -include "*.clz", "*.cpz", "*.cplz", "*.nuspec", "*.md" | ForEach-Object {
             $allowed = $true;
             # Exclude any files in submodules
             foreach ($exclude in $exclusions) {
@@ -149,12 +149,10 @@ jobs:
             Write-Host $filenames
             if ($filenames.length -gt 0) {
               # Attempt to get the files and return them to the output directory
-              Get-ChildItem -Recurse -Path "$($Env:GITHUB_WORKSPACE)" -include $filenames | Copy-Item -Destination ($destination) -Force
+              Get-ChildItem -Recurse -Path "$($Env:GITHUB_WORKSPACE)\src" -include $filenames | Copy-Item -Destination ($destination) -Force
             }
           }
           Get-ChildItem -Path $destination\*.cplz | Rename-Item -NewName { "$($_.BaseName)-$($Env:VERSION)$($_.Extension)" } | Write-Host
-          # Compress-Archive -Path $destination -DestinationPath "$($Env:GITHUB_WORKSPACE)\$($Env:SOLUTION_FILE)-$($Env:VERSION).zip" -Force
-          # Write-Host "Output Contents post Zip"
           Get-ChildItem -Path $destination
         
       - name: Remove Existing Nuspec Files
