@@ -127,75 +127,63 @@ def parse_joinmap_info(class_name, root_directory):
     with open(file_path, 'r', encoding='utf-8') as file:
         file_content = file.read()
 
+    # Remove C# comments to avoid false matches
+    file_content = re.sub(r'//.*?\n|/\*.*?\*/', '', file_content, flags=re.DOTALL)
+
+    # Updated pattern to better match the join definitions
     join_pattern = re.compile(
-        r'\[JoinName\("(?P<join_name>[^"]+)"\)\]\s*'  # Match the [JoinName("...")] attribute
-        r'public\s+JoinDataComplete\s+(?P<property_name>\w+)\s*=\s*'  # Match the property declaration
-        r'new\s+JoinDataComplete\s*\('  # Match 'new JoinDataComplete('
-        r'\s*new\s+JoinData\s*\{(?P<join_data>[^\}]+)\}\s*,'  # Match 'new JoinData { ... },'
-        r'\s*new\s+JoinMetadata\s*\{(?P<join_metadata>[^\}]+)\}\s*'  # Match 'new JoinMetadata { ... }'
-        r'\)',  # Match closing parenthesis of new JoinDataComplete
+        r'\[JoinName\("(?P<join_name>[^"]+)"\)\]\s*'
+        r'public\s+JoinDataComplete\s+\w+\s*=\s*new\s+JoinDataComplete\s*\(\s*'
+        r'new\s+JoinData\s*\{[^}]*JoinNumber\s*=\s*(?P<join_number>\d+)[^}]*\}\s*,\s*'
+        r'new\s+JoinMetadata\s*\{[^}]*'
+        r'Description\s*=\s*"(?P<description>[^"]+)"[^}]*'
+        r'JoinType\s*=\s*eJoinType\.(?P<join_type>\w+)[^}]*\}\s*\)',
         re.DOTALL
     )
 
     joinmap_info = []
+    
     for match in join_pattern.finditer(file_content):
-        join_name = match.group('join_name')
-        property_name = match.group('property_name')
-        join_data = match.group('join_data')
-        join_metadata = match.group('join_metadata')
-
-        # Now parse join_data and join_metadata to extract join_number, description, join_type, etc.
-
-        # Extract join_number from join_data
-        join_number_match = re.search(r'JoinNumber\s*=\s*(\d+)', join_data)
-        if join_number_match:
-            join_number = join_number_match.group(1)
-        else:
-            join_number = None
-
-        # Extract description and join_type from join_metadata
-        description_match = re.search(r'Description\s*=\s*"([^"]+)"', join_metadata)
-        if description_match:
-            description = description_match.group(1)
-        else:
-            description = None
-
-        join_type_match = re.search(r'JoinType\s*=\s*eJoinType\.(\w+)', join_metadata)
-        if join_type_match:
-            join_type = join_type_match.group(1)
-        else:
-            join_type = None
-
-        joinmap_info.append({
-            "name": join_name,
-            "join_number": join_number,
-            "type": join_type,
-            "description": description
-        })
+        join_info = {
+            "name": match.group('join_name'),
+            "join_number": match.group('join_number'),
+            "description": match.group('description'),
+            "type": match.group('join_type')
+        }
+        joinmap_info.append(join_info)
 
     return joinmap_info
 
 def generate_markdown_chart(joins, section_title):
     if not joins:
         return ''
+    
     markdown_chart = f'### {section_title}\n\n'
 
     # Group joins by type
-    joins_by_type = {'Digital': [], 'Analog': [], 'Serial': []}
+    joins_by_type = {}
     for join in joins:
-        if join['type'] in joins_by_type:
-            joins_by_type[join['type']].append(join)
-        else:
-            joins_by_type['Digital'].append(join)  # Default to Digital if type not recognized
+        join_type = join['type']
+        if join_type not in joins_by_type:
+            joins_by_type[join_type] = []
+        joins_by_type[join_type].append(join)
 
+    # Sort joins within each type by join number
+    for join_type in joins_by_type:
+        joins_by_type[join_type].sort(key=lambda x: int(x['join_number']))
+
+    # Process each join type
     for join_type in ['Digital', 'Analog', 'Serial']:
-        if joins_by_type[join_type]:
-            markdown_chart += f"#### {join_type}s\n\n"
-            markdown_chart += "| Join | Type (RW) | Description |\n"
-            markdown_chart += "| --- | --- | --- |\n"
+        if join_type in joins_by_type and joins_by_type[join_type]:
+            markdown_chart += f"#### {join_type}\n\n"
+            markdown_chart += "| Join | Description |\n"
+            markdown_chart += "|------|-------------|\n"
+            
             for join in joins_by_type[join_type]:
-                markdown_chart += f"| {join['join_number']} | R | {join['description']} |\n"
+                markdown_chart += f"| {join['join_number']} | {join['description']} |\n"
+            
             markdown_chart += '\n'
+
     return markdown_chart
 
 def generate_config_example_markdown(sample_config):
