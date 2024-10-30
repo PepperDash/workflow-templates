@@ -75,48 +75,88 @@ def read_files_in_directory(directory):
     }
 
 def read_class_names_and_bases_from_files(directory):
+    print("\nScanning for class definitions...")
     class_defs = {}
-    class_pattern = re.compile(
-        r'^\s*(?:\[[^\]]+\]\s*)*'        # Optional attributes
-        r'(?:public\s+|private\s+|protected\s+)?'  # Optional access modifier
-        r'(?:partial\s+)?'                # Optional 'partial' keyword
-        r'class\s+([A-Za-z_]\w*)'         # Class name
-        r'(?:\s*:\s*([^\{]+))?'           # Optional base classes
-        r'\s*\{',                         # Opening brace
-        re.MULTILINE
-    )
     for root, _, files in os.walk(directory):
         for file in files:
             if file.endswith('.cs'):
                 file_path = os.path.join(root, file)
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    for match in class_pattern.finditer(content):
-                        class_name = match.group(1)
-                        bases = match.group(2)
-                        if bases:
-                            base_classes = [b.strip() for b in bases.split(',')]
-                        else:
-                            base_classes = []
-                        class_defs[class_name] = base_classes
+                print(f"\nReading CS file: {file_path}")
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if "JoinMapBase" in content or "BridgeJoinMap" in content:
+                            print(f"Found potential JoinMap file: {file}")
+                        # Rest of the existing processing...
+                        class_pattern = re.compile(
+                            r'^\s*(?:\[[^\]]+\]\s*)*'
+                            r'(?:public\s+|private\s+|protected\s+)?'
+                            r'(?:partial\s+)?'
+                            r'class\s+([A-Za-z_]\w*)'
+                            r'(?:\s*:\s*([^\n{]+))?'
+                            r'\s*\{',
+                            re.MULTILINE
+                        )
+                        for match in class_pattern.finditer(content):
+                            class_name = match.group(1)
+                            bases = match.group(2)
+                            if bases:
+                                base_classes = [b.strip() for b in bases.split(',')]
+                            else:
+                                base_classes = []
+                            class_defs[class_name] = base_classes
+                            print(f"Found class: {class_name} with bases: {base_classes}")
+                except Exception as e:
+                    print(f"Error reading file {file_path}: {str(e)}")
     return class_defs
 
 def find_joinmap_classes(class_defs):
+    print("\nSearching for JoinMap classes...")
     joinmap_classes = []
     for class_name, base_classes in class_defs.items():
-        if 'JoinMapBaseAdvanced' in base_classes:
-            joinmap_classes.append(class_name)
+        print(f"Checking class: {class_name}")
+        print(f"Base classes: {base_classes}")
+        
+        # Convert the found class name to match file naming convention
+        file_class_name = class_name.replace("OneBeyond", "1Beyond")
+        
+        is_joinmap = (any('JoinMapBase' in base for base in base_classes) or 
+                     'BridgeJoinMap' in class_name or 
+                     any('JoinMapBaseAdvanced' in base for base in base_classes))
+        if is_joinmap:
+            print(f"Found JoinMap class: {class_name}")
+            joinmap_classes.append(file_class_name)
     return joinmap_classes
 
 def find_file_in_directory(filename, root_directory):
+    print(f"\nSearching for file: {filename}")
+    print(f"Starting search in directory: {root_directory}")
+    
+    # Handle variations of the filename
+    possible_names = [
+        filename,  # Original name
+        filename.replace("OneBeyond", "1Beyond"),  # Replace OneBeyond with 1Beyond
+        filename.upper(),  # All uppercase
+        filename.lower(),  # All lowercase
+    ]
+    
     for root, _, files in os.walk(root_directory):
+        print(f"\nChecking directory: {root}")
+        print(f"Files in directory: {files}")
+        
         for file in files:
-            if file == filename:
-                full_path = os.path.join(root, file)
-                return full_path
+            # Check against all possible variations
+            for possible_name in possible_names:
+                if file.lower() == possible_name.lower():
+                    full_path = os.path.join(root, file)
+                    print(f"Found file at: {full_path}")
+                    return full_path
+    
+    print(f"File not found: {filename}")
     return None
 
 def parse_joinmap_info(class_name, root_directory):
+    print(f"\nParsing JoinMap info for class: {class_name}")
     filename = f"{class_name}.cs"
     file_path = find_file_in_directory(filename, root_directory)
 
@@ -124,34 +164,53 @@ def parse_joinmap_info(class_name, root_directory):
         print(f"File not found: {filename}. Skipping...")
         return []
 
+    print(f"Processing file: {file_path}")
     with open(file_path, 'r', encoding='utf-8') as file:
         file_content = file.read()
+        print(f"File size: {len(file_content)} characters")
 
     # Remove C# comments to avoid false matches
     file_content = re.sub(r'//.*?\n|/\*.*?\*/', '', file_content, flags=re.DOTALL)
 
-    # Updated pattern to better match the join definitions
-    join_pattern = re.compile(
-        r'\[JoinName\("(?P<join_name>[^"]+)"\)\]\s*'
-        r'public\s+JoinDataComplete\s+\w+\s*=\s*new\s+JoinDataComplete\s*\(\s*'
-        r'new\s+JoinData\s*\{[^}]*JoinNumber\s*=\s*(?P<join_number>\d+)[^}]*\}\s*,\s*'
-        r'new\s+JoinMetadata\s*\{[^}]*'
-        r'Description\s*=\s*"(?P<description>[^"]+)"[^}]*'
-        r'JoinType\s*=\s*eJoinType\.(?P<join_type>\w+)[^}]*\}\s*\)',
-        re.DOTALL
-    )
-
+    # Split into regions first
+    regions = re.split(r'#region\s+(Digital|Analog|Serial)', file_content)[1:]  # Skip the first split which is before first region
+    
     joinmap_info = []
     
-    for match in join_pattern.finditer(file_content):
-        join_info = {
-            "name": match.group('join_name'),
-            "join_number": match.group('join_number'),
-            "description": match.group('description'),
-            "type": match.group('join_type')
-        }
-        joinmap_info.append(join_info)
+    # Process regions in pairs (region name and content)
+    for i in range(0, len(regions), 2):
+        if i + 1 >= len(regions):
+            break
+            
+        region_type = regions[i].strip()
+        region_content = regions[i + 1]
+        
+        # Find the end of the region
+        region_content = region_content.split('#endregion')[0]
+        
+        # Simpler pattern to match individual joins
+        join_matches = re.finditer(
+            r'\[JoinName\("(?P<name>[^"]+)"\)\][\s\n]*'
+            r'public\s+JoinDataComplete\s+\w+\s*=\s*new\s+JoinDataComplete\s*\('
+            r'[\s\n]*new\s+JoinData\s*\{[^}]*?JoinNumber\s*=\s*(?P<number>\d+)[^}]*\}'
+            r'[\s\n]*,[\s\n]*new\s+JoinMetadata\s*\{[^}]*?Description\s*=\s*"(?P<description>[^"]+)"[^}]*\}',
+            region_content,
+            re.DOTALL
+        )
 
+        for match in join_matches:
+            join_info = {
+                "name": match.group('name'),
+                "join_number": match.group('number'),
+                "description": match.group('description'),
+                "type": region_type
+            }
+            print(f"Found join: {join_info}")
+            joinmap_info.append(join_info)
+
+    # Sort joins by type and number
+    joinmap_info.sort(key=lambda x: (x['type'], int(x['join_number'])))
+    print(f"Total joins found: {len(joinmap_info)}")
     return joinmap_info
 
 def generate_markdown_chart(joins, section_title):
@@ -161,26 +220,27 @@ def generate_markdown_chart(joins, section_title):
     markdown_chart = f'### {section_title}\n\n'
 
     # Group joins by type
-    joins_by_type = {}
+    joins_by_type = {'Digital': [], 'Analog': [], 'Serial': []}
     for join in joins:
         join_type = join['type']
-        if join_type not in joins_by_type:
-            joins_by_type[join_type] = []
         joins_by_type[join_type].append(join)
 
-    # Sort joins within each type by join number
-    for join_type in joins_by_type:
-        joins_by_type[join_type].sort(key=lambda x: int(x['join_number']))
-
-    # Process each join type
+    # Process each join type in order
     for join_type in ['Digital', 'Analog', 'Serial']:
-        if join_type in joins_by_type and joins_by_type[join_type]:
-            markdown_chart += f"#### {join_type}\n\n"
+        if joins_by_type[join_type]:
+            markdown_chart += f"#### {join_type}s\n\n"
             markdown_chart += "| Join | Description |\n"
             markdown_chart += "|------|-------------|\n"
             
-            for join in joins_by_type[join_type]:
-                markdown_chart += f"| {join['join_number']} | {join['description']} |\n"
+            # Sort joins by join number
+            sorted_joins = sorted(joins_by_type[join_type], key=lambda x: int(x['join_number']))
+            
+            for join in sorted_joins:
+                # Clean up the description
+                description = join['description'].strip().replace('|', '\\|')
+                # Remove any newlines or extra spaces in description
+                description = ' '.join(description.split())
+                markdown_chart += f"| {join['join_number']} | {description} |\n"
             
             markdown_chart += '\n'
 
