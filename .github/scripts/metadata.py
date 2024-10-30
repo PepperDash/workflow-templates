@@ -1,18 +1,32 @@
 import os
 import re
 import json
+import logging
+
+# Set up logging configuration
+logging.basicConfig(level=logging.DEBUG)
 
 def extract_implemented_interfaces(file_content):
+    logging.debug("Extracting implemented interfaces and base classes.")
     interface_pattern = re.compile(r'class\s+\w+\s*:\s*([^{]+)')
     match = interface_pattern.search(file_content)
     if match:
+        logging.debug("Inheritance pattern matched in class definition.")
         items = match.group(1).split(',')
         interfaces = [item.strip() for item in items if item.strip().startswith('I')]
-        base_classes = [item.strip() for item in items if not item.strip().startswith('I') and not item.strip().startswith('EssentialsPluginDeviceFactory')]
+        base_classes = [
+            item.strip()
+            for item in items
+            if not item.strip().startswith('I') and not item.strip().startswith('EssentialsPluginDeviceFactory')
+        ]
+        logging.debug(f"Interfaces extracted: {interfaces}")
+        logging.debug(f"Base classes extracted: {base_classes}")
         return interfaces, base_classes
+    logging.debug("No implemented interfaces or base classes found.")
     return [], []
 
 def extract_supported_types(file_content):
+    logging.debug("Extracting supported types.")
     # Remove commented lines
     uncommented_content = re.sub(r'//.*', '', file_content)
     
@@ -23,35 +37,46 @@ def extract_supported_types(file_content):
     for match in matches:
         current_types = [type_name.strip().strip('"') for type_name in match.split(',')]
         types.extend(current_types)
+        logging.debug(f"Current types extracted: {current_types}")
 
     # Remove duplicates and filter out unnecessary entries
-    return list(set(filter(None, types)))
+    unique_types = list(set(filter(None, types)))
+    logging.debug(f"Unique supported types: {unique_types}")
+    return unique_types
 
 def extract_minimum_essentials_framework_version(file_content):
-    # Update the regex to exclude comments or anything unnecessary.
+    logging.debug("Extracting minimum Essentials Framework version.")
     version_pattern = re.compile(r'^\s*MinimumEssentialsFrameworkVersion\s*=\s*"([^"]+)"\s*;', re.MULTILINE)
     match = version_pattern.search(file_content)
     if match:
-        return match.group(1)
+        version = match.group(1)
+        logging.debug(f"Minimum Essentials Framework Version found: {version}")
+        return version
+    logging.debug("No Minimum Essentials Framework Version found.")
     return None
 
 def extract_public_methods(file_content):
+    logging.debug("Extracting public methods.")
     methods_pattern = re.compile(r'public\s+\w+\s+\w+\s*\([^)]*\)\s*')
     matches = methods_pattern.findall(file_content)
-    return [match.strip() for match in matches]
+    methods = [match.strip() for match in matches]
+    logging.debug(f"Public methods extracted: {methods}")
+    return methods
 
 def read_files_in_directory(directory):
+    logging.debug(f"Reading files in directory: {directory}")
     all_interfaces = []
     all_base_classes = []
     all_supported_types = []
     all_minimum_versions = []
     all_public_methods = []
-    all_joins = []
 
     for root, _, files in os.walk(directory):
+        logging.debug(f"Entering directory: {root}")
         for file in files:
             if file.endswith('.cs'):
                 file_path = os.path.join(root, file)
+                logging.debug(f"Processing file: {file_path}")
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                     interfaces, base_classes = extract_implemented_interfaces(content)
@@ -66,6 +91,7 @@ def read_files_in_directory(directory):
                         all_minimum_versions.append(minimum_version)
                     all_public_methods.extend(public_methods)
 
+    logging.debug("Finished reading all files.")
     return {
         "interfaces": all_interfaces,
         "base_classes": all_base_classes,
@@ -75,95 +101,78 @@ def read_files_in_directory(directory):
     }
 
 def read_class_names_and_bases_from_files(directory):
+    logging.debug(f"Reading class names and bases from files in directory: {directory}")
     class_defs = {}
     class_pattern = re.compile(
-        r'^\s*(?:\[[^\]]+\]\s*)*'  # Optional attributes
+        r'^\s*(?:\[[^\]]+\]\s*)*'        # Optional attributes
         r'(?:public\s+|private\s+|protected\s+)?'  # Optional access modifier
-        r'(?:partial\s+)?'  # Optional 'partial' keyword
-        r'class\s+([A-Za-z_]\w*)'  # Class name
-        r'\s*:\s*([^{]+)?'  # Capture all base classes after colon
-        r'\s*{',  # Opening brace
+        r'(?:partial\s+)?'                # Optional 'partial' keyword
+        r'class\s+([A-Za-z_]\w*)'         # Class name
+        r'(?:\s*:\s*([^\{]+))?'           # Optional base classes
+        r'\s*\{',                         # Opening brace
         re.MULTILINE
     )
-    
     for root, _, files in os.walk(directory):
+        logging.debug(f"Entering directory: {root}")
         for file in files:
             if file.endswith('.cs'):
                 file_path = os.path.join(root, file)
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        # Remove single-line comments
-                        content = re.sub(r'//.*$', '', content, flags=re.MULTILINE)
-                        # Remove multi-line comments
-                        content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
-                        
-                        for match in class_pattern.finditer(content):
-                            class_name = match.group(1)
-                            bases = match.group(2)
-                            if bases:
-                                # Split on comma, handle potential generic types properly
-                                base_classes = []
-                                brace_count = 0
-                                current = []
-                                
-                                for char in bases:
-                                    if char == '<':
-                                        brace_count += 1
-                                    elif char == '>':
-                                        brace_count -= 1
-                                    elif char == ',' and brace_count == 0:
-                                        base_classes.append(''.join(current).strip())
-                                        current = []
-                                        continue
-                                    current.append(char)
-                                
-                                if current:
-                                    base_classes.append(''.join(current).strip())
-                                
-                                # Clean up base class names
-                                base_classes = [b.split('.')[-1] for b in base_classes]
-                            else:
-                                base_classes = []
-                            class_defs[class_name] = base_classes
-                except (UnicodeDecodeError, IOError) as e:
-                    print(f"Error reading {file_path}: {e}")
-                    continue
+                logging.debug(f"Processing file: {file_path}")
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    for match in class_pattern.finditer(content):
+                        class_name = match.group(1)
+                        bases = match.group(2)
+                        if bases:
+                            base_classes = [b.strip() for b in bases.split(',')]
+                        else:
+                            base_classes = []
+                        logging.debug(f"Class '{class_name}' with bases: {base_classes}")
+                        class_defs[class_name] = base_classes
+    logging.debug("Finished reading class definitions.")
     return class_defs
 
 def find_joinmap_classes(class_defs):
+    logging.debug("Finding classes that inherit from 'JoinMapBaseAdvanced'.")
     joinmap_classes = []
     for class_name, base_classes in class_defs.items():
         if 'JoinMapBaseAdvanced' in base_classes:
+            logging.debug(f"Class '{class_name}' is a JoinMap class.")
             joinmap_classes.append(class_name)
     return joinmap_classes
 
 def find_file_in_directory(filename, root_directory):
+    logging.debug(f"Searching for file '{filename}' in directory: {root_directory}")
     for root, _, files in os.walk(root_directory):
-        for file in files:
-            if file == filename:
-                full_path = os.path.join(root, file)
-                return full_path
+        if filename in files:
+            full_path = os.path.join(root, filename)
+            logging.debug(f"File found: {full_path}")
+            return full_path
+    logging.debug(f"File '{filename}' not found in directory '{root_directory}'.")
     return None
 
 def parse_joinmap_info(class_name, root_directory):
+    logging.debug(f"Parsing join map info for class '{class_name}'.")
     filename = f"{class_name}.cs"
     file_path = find_file_in_directory(filename, root_directory)
 
     if not file_path:
-        print(f"File not found: {filename}. Skipping...")
+        logging.warning(f"File not found: {filename}. Skipping...")
         return []
 
     with open(file_path, 'r', encoding='utf-8') as file:
         file_content = file.read()
 
+    # Remove comments to prevent interference with regex
+    file_content = re.sub(r'//.*', '', file_content)
+    file_content = re.sub(r'/\*.*?\*/', '', file_content, flags=re.DOTALL)
+
+    # Updated regex to handle multiline definitions and optional parameters
     join_pattern = re.compile(
-        r'\[JoinName\("(?P<join_name>[^"]+)"\)\]\s*'  # Match the [JoinName("...")] attribute
-        r'public\s+JoinDataComplete\s+(?P<property_name>\w+)\s*=\s*'  # Match the property declaration
-        r'new\s+JoinDataComplete\s*\('  # Match 'new JoinDataComplete('
-        r'\s*new\s+JoinData\s*\{(?P<join_data>[^\}]+)\}\s*,'  # Match 'new JoinData { ... },'
-        r'\s*new\s+JoinMetadata\s*\{(?P<join_metadata>[^\}]+)\}\s*'  # Match 'new JoinMetadata { ... }'
-        r'\)',  # Match closing parenthesis of new JoinDataComplete
+        r'\[JoinName\("(?P<join_name>[^"]+)"\)\]\s*'                  # [JoinName("...")]
+        r'public\s+JoinDataComplete\s+(?P<property_name>\w+)\s*=\s*'   # public JoinDataComplete PropertyName =
+        r'new\s+JoinDataComplete\s*\(\s*'                             # new JoinDataComplete(
+        r'(?P<join_params>.*?)\)\s*;',                                # Capture everything inside the parentheses
         re.DOTALL
     )
 
@@ -171,42 +180,68 @@ def parse_joinmap_info(class_name, root_directory):
     for match in join_pattern.finditer(file_content):
         join_name = match.group('join_name')
         property_name = match.group('property_name')
-        join_data = match.group('join_data')
-        join_metadata = match.group('join_metadata')
+        join_params = match.group('join_params')
 
-        # Now parse join_data and join_metadata to extract join_number, description, join_type, etc.
+        logging.debug(f"Processing join '{join_name}' in property '{property_name}'.")
 
-        # Extract join_number from join_data
-        join_number_match = re.search(r'JoinNumber\s*=\s*(\d+)', join_data)
-        if join_number_match:
-            join_number = join_number_match.group(1)
+        # Extract JoinData and JoinMetadata from join_params
+        join_data_match = re.search(r'new\s+JoinData\s*(?:\(\s*\))?\s*\{(.*?)\}', join_params, re.DOTALL)
+        join_metadata_match = re.search(r'new\s+JoinMetadata\s*(?:\(\s*\))?\s*\{(.*?)\}', join_params, re.DOTALL)
+
+        # Initialize variables
+        join_number = None
+        description = None
+        join_type = None
+
+        if join_data_match:
+            join_data_content = join_data_match.group(1)
+            join_number_match = re.search(r'JoinNumber\s*=\s*(\d+)', join_data_content)
+            if join_number_match:
+                join_number = join_number_match.group(1)
+                logging.debug(f"Join number found: {join_number}")
+            else:
+                logging.debug(f"No join number found in join data for '{join_name}'.")
         else:
-            join_number = None
+            logging.debug(f"No JoinData found for '{join_name}'.")
 
-        # Extract description and join_type from join_metadata
-        description_match = re.search(r'Description\s*=\s*"([^"]+)"', join_metadata)
-        if description_match:
-            description = description_match.group(1)
+        if join_metadata_match:
+            join_metadata_content = join_metadata_match.group(1)
+            description_match = re.search(r'Description\s*=\s*"([^"]+)"', join_metadata_content)
+            if description_match:
+                description = description_match.group(1)
+                logging.debug(f"Description found: '{description}'")
+            else:
+                logging.debug(f"No description found in join metadata for '{join_name}'.")
+
+            join_type_match = re.search(r'JoinType\s*=\s*eJoinType\.(\w+)', join_metadata_content)
+            if join_type_match:
+                join_type = join_type_match.group(1)
+                logging.debug(f"Join type found: {join_type}")
+            else:
+                logging.debug(f"No join type found in join metadata for '{join_name}'.")
         else:
-            description = None
+            logging.debug(f"No JoinMetadata found for '{join_name}'.")
 
-        join_type_match = re.search(r'JoinType\s*=\s*eJoinType\.(\w+)', join_metadata)
-        if join_type_match:
-            join_type = join_type_match.group(1)
+        if join_name and join_number and join_type:
+            logging.debug(f"Adding join '{join_name}' to join map info.")
+            joinmap_info.append({
+                "name": join_name,
+                "join_number": join_number,
+                "type": join_type,
+                "description": description
+            })
         else:
-            join_type = None
-
-        joinmap_info.append({
-            "name": join_name,
-            "join_number": join_number,
-            "type": join_type,
-            "description": description
-        })
+            logging.warning(f"Incomplete join information for '{join_name}'. Skipping.")
 
     return joinmap_info
 
+
+
+
 def generate_markdown_chart(joins, section_title):
+    logging.debug(f"Generating markdown chart for section '{section_title}'.")
     if not joins:
+        logging.debug("No joins to include in the chart.")
         return ''
     markdown_chart = f'### {section_title}\n\n'
 
@@ -226,9 +261,11 @@ def generate_markdown_chart(joins, section_title):
             for join in joins_by_type[join_type]:
                 markdown_chart += f"| {join['join_number']} | R | {join['description']} |\n"
             markdown_chart += '\n'
+    logging.debug(f"Markdown chart generated for '{section_title}'.")
     return markdown_chart
 
 def generate_config_example_markdown(sample_config):
+    logging.debug("Generating config example markdown.")
     markdown = "### Config Example\n\n"
     markdown += "```json\n"
     markdown += json.dumps(sample_config, indent=4)
@@ -236,17 +273,9 @@ def generate_config_example_markdown(sample_config):
     return markdown
 
 def generate_markdown_list(items, section_title):
-    """
-    Generates a markdown header and list of items.
-
-    Parameters:
-    - items (list): The list of items to include.
-    - section_title (str): The header for the section.
-
-    Returns:
-    - str: The markdown content with the section header.
-    """
+    logging.debug(f"Generating markdown list for section '{section_title}'.")
     if not items:
+        logging.debug(f"No items to include in section '{section_title}'.")
         return ''
     markdown = f'### {section_title}\n\n'
     for item in items:
@@ -255,6 +284,7 @@ def generate_markdown_list(items, section_title):
     return markdown
 
 def parse_all_classes(directory):
+    logging.debug(f"Parsing all classes in directory: {directory}")
     class_defs = {}
     class_pattern = re.compile(
         r'^\s*(?:\[[^\]]+\]\s*)*'      # Optional attributes
@@ -276,14 +306,17 @@ def parse_all_classes(directory):
         re.MULTILINE | re.DOTALL
     )
     for root, _, files in os.walk(directory):
+        logging.debug(f"Entering directory: {root}")
         for file in files:
             if file.endswith('.cs'):
                 file_path = os.path.join(root, file)
+                logging.debug(f"Processing file: {file_path}")
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                     # Find all class definitions
                     for class_match in class_pattern.finditer(content):
                         class_name = class_match.group(1)
+                        logging.debug(f"Class found: {class_name}")
                         class_start = class_match.end()
                         # Find the matching closing brace for the class
                         class_body, end_index = extract_class_body(content, class_start)
@@ -300,10 +333,13 @@ def parse_all_classes(directory):
                                 "property_name": prop_name,
                                 "property_type": prop_type
                             })
+                            logging.debug(f"Property found in class '{class_name}': {prop_name} ({prop_type})")
                         class_defs[class_name] = properties
+    logging.debug("Finished parsing all classes.")
     return class_defs
 
 def extract_class_body(content, start_index):
+    logging.debug(f"Extracting class body starting at index {start_index}.")
     """
     Extracts the body of a class from the content, starting at start_index.
     Returns the class body and the index where it ends.
@@ -316,7 +352,9 @@ def extract_class_body(content, start_index):
         elif content[index] == '}':
             brace_count -= 1
         index += 1
-    return content[start_index:index - 1], index - 1
+    class_body = content[start_index:index - 1]
+    logging.debug(f"Class body extracted. Length: {len(class_body)} characters.")
+    return class_body, index - 1
 
 def generate_sample_value(property_type, class_defs, processed_classes=None):
     if processed_classes is None:
@@ -324,6 +362,7 @@ def generate_sample_value(property_type, class_defs, processed_classes=None):
     property_type = property_type.strip()
     # Handle nullable types
     property_type = property_type.rstrip('?')
+    logging.debug(f"Generating sample value for type '{property_type}'.")
     # Handle primitive types
     if property_type in ('int', 'long', 'float', 'double', 'decimal'):
         return 0
@@ -347,7 +386,9 @@ def generate_sample_value(property_type, class_defs, processed_classes=None):
     # Handle custom classes
     elif property_type in class_defs:
         if property_type in processed_classes:
+            logging.debug(f"Already processed class '{property_type}', avoiding recursion.")
             return {}
+        logging.debug(f"Processing custom class '{property_type}'.")
         processed_classes.add(property_type)
         properties = class_defs[property_type]
         sample_obj = {}
@@ -359,9 +400,11 @@ def generate_sample_value(property_type, class_defs, processed_classes=None):
         return sample_obj
     else:
         # Unknown type, default to a sample value
+        logging.debug(f"Unknown type '{property_type}', using default sample value.")
         return "SampleValue"
 
 def generate_sample_config(config_class_name, class_defs, supported_types):
+    logging.debug(f"Generating sample config for class '{config_class_name}'.")
     type_name = config_class_name[:-6]  # Remove 'Config'
     if type_name not in supported_types:
         type_name = supported_types[0] if supported_types else type_name
@@ -373,16 +416,21 @@ def generate_sample_config(config_class_name, class_defs, supported_types):
         "group": "Group",
         "properties": generate_sample_value(config_class_name, class_defs)
     }
+    logging.debug(f"Sample config generated: {config}")
     return config
 
 def read_readme_file(filepath):
+    logging.debug(f"Reading README file at: {filepath}")
     if not os.path.exists(filepath):
-        print(f"README.md file not found at {filepath}. A new file will be created.")
+        logging.warning(f"README.md file not found at {filepath}. A new file will be created.")
         return ""
     with open(filepath, 'r', encoding='utf-8') as f:
-        return f.read()
+        content = f.read()
+        logging.debug("README.md file content successfully read.")
+        return content
 
 def update_readme_section(readme_content, section_title, new_section_content):
+    logging.debug(f"Updating README section '{section_title}'.")
     start_marker = f'<!-- START {section_title} -->'
     end_marker = f'<!-- END {section_title} -->'
 
@@ -396,14 +444,14 @@ def update_readme_section(readme_content, section_title, new_section_content):
     if match:
         section_content = match.group(1)
         if '<!-- SKIP -->' in section_content:
-            print(f"Skipping section: {section_title} (found <!-- SKIP -->)")
+            logging.info(f"Skipping section: {section_title} (found <!-- SKIP -->)")
             return readme_content  # Return the original content unchanged
         else:
-            print(f"Updating existing section: {section_title}")
+            logging.debug(f"Updating existing section: {section_title}")
             updated_section = f'{start_marker}\n{new_section_content.rstrip()}\n{end_marker}'
             updated_readme = readme_content[:match.start()] + updated_section + readme_content[match.end():]
     else:
-        print(f"Adding new section: {section_title}")
+        logging.debug(f"Adding new section: {section_title}")
         # Ensure there's a newline before adding the new section
         if not readme_content.endswith('\n'):
             readme_content += '\n'
@@ -412,11 +460,15 @@ def update_readme_section(readme_content, section_title, new_section_content):
     return updated_readme
 
 def remove_duplicates_preserve_order(seq):
+    logging.debug("Removing duplicates while preserving order.")
     seen = set()
-    return [x for x in seq if not (x in seen or seen.add(x))]
+    unique_list = [x for x in seq if not (x in seen or seen.add(x))]
+    logging.debug(f"Unique items: {unique_list}")
+    return unique_list
 
 if __name__ == "__main__":
     project_directory = os.path.abspath("./")
+    logging.info(f"Starting processing in project directory: {project_directory}")
     results = read_files_in_directory(project_directory)
 
     # Remove duplicates from interfaces and base classes while preserving order
@@ -443,7 +495,7 @@ if __name__ == "__main__":
     all_class_defs = parse_all_classes(project_directory)
     config_classes = [cls for cls in all_class_defs if cls.endswith('Config') or cls.endswith('ConfigObject')]
     if not config_classes:
-        print("No config classes found.")
+        logging.warning("No config classes found.")
         config_example_markdown = ""
     else:
         main_config_class = max(config_classes, key=lambda cls: len(all_class_defs[cls]))
@@ -467,5 +519,6 @@ if __name__ == "__main__":
     # Write the updated content back to README.md
     with open(readme_path, 'w', encoding='utf-8') as f:
         f.write(readme_content)
+        logging.info("README.md has been updated.")
 
-    print("README.md has been updated.")
+    logging.info("Processing completed.")
