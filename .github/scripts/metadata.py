@@ -77,28 +77,58 @@ def read_files_in_directory(directory):
 def read_class_names_and_bases_from_files(directory):
     class_defs = {}
     class_pattern = re.compile(
-        r'^\s*(?:\[[^\]]+\]\s*)*'        # Optional attributes
+        r'^\s*(?:\[[^\]]+\]\s*)*'  # Optional attributes
         r'(?:public\s+|private\s+|protected\s+)?'  # Optional access modifier
-        r'(?:partial\s+)?'                # Optional 'partial' keyword
-        r'class\s+([A-Za-z_]\w*)'         # Class name
-        r'(?:\s*:\s*([^\{]+))?'           # Optional base classes
-        r'\s*\{',                         # Opening brace
+        r'(?:partial\s+)?'  # Optional 'partial' keyword
+        r'class\s+([A-Za-z_]\w*)'  # Class name
+        r'\s*:\s*([^{]+)?'  # Capture all base classes after colon
+        r'\s*{',  # Opening brace
         re.MULTILINE
     )
+    
     for root, _, files in os.walk(directory):
         for file in files:
             if file.endswith('.cs'):
                 file_path = os.path.join(root, file)
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    for match in class_pattern.finditer(content):
-                        class_name = match.group(1)
-                        bases = match.group(2)
-                        if bases:
-                            base_classes = [b.strip() for b in bases.split(',')]
-                        else:
-                            base_classes = []
-                        class_defs[class_name] = base_classes
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        # Remove single-line comments
+                        content = re.sub(r'//.*$', '', content, flags=re.MULTILINE)
+                        # Remove multi-line comments
+                        content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+                        
+                        for match in class_pattern.finditer(content):
+                            class_name = match.group(1)
+                            bases = match.group(2)
+                            if bases:
+                                # Split on comma, handle potential generic types properly
+                                base_classes = []
+                                brace_count = 0
+                                current = []
+                                
+                                for char in bases:
+                                    if char == '<':
+                                        brace_count += 1
+                                    elif char == '>':
+                                        brace_count -= 1
+                                    elif char == ',' and brace_count == 0:
+                                        base_classes.append(''.join(current).strip())
+                                        current = []
+                                        continue
+                                    current.append(char)
+                                
+                                if current:
+                                    base_classes.append(''.join(current).strip())
+                                
+                                # Clean up base class names
+                                base_classes = [b.split('.')[-1] for b in base_classes]
+                            else:
+                                base_classes = []
+                            class_defs[class_name] = base_classes
+                except (UnicodeDecodeError, IOError) as e:
+                    print(f"Error reading {file_path}: {e}")
+                    continue
     return class_defs
 
 def find_joinmap_classes(class_defs):
