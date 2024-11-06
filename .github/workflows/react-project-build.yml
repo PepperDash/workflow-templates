@@ -1,5 +1,4 @@
-name: react-project-build
-
+name: react-project-build-and-publish
 on:
   workflow_call:
     outputs:
@@ -21,7 +20,6 @@ on:
       hash:
         description: 'The short SHA of the workflow'
         value: ${{ jobs.get_version.outputs.hash }}
-        
 jobs:
   get_version:
     runs-on: ubuntu-latest
@@ -86,6 +84,81 @@ jobs:
           else
             echo "Found existing .releaserc.json, using repository configuration"
           fi
+
+      - name: Create or update package.json
+        id: package_json
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "Creating new package.json..."
+            # Get the repository owner and name
+            OWNER=$(echo ${{ github.repository }} | cut -d'/' -f1)
+            NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
+            
+            # Create initial package.json
+            cat > package.json << EOF
+          {
+            "name": "@${OWNER}/${NAME}",
+            "version": "0.0.0-development",
+            "description": "Package for ${NAME}",
+            "main": "dist/index.js",
+            "types": "dist/index.d.ts",
+            "files": [
+              "dist"
+            ],
+            "scripts": {
+              "build": "tsc --declaration --emitDeclarationOnly && vite build",
+              "test": "echo \"Error: no test specified\" && exit 1"
+            },
+            "repository": {
+              "type": "git",
+              "url": "git+https://github.com/${OWNER}/${NAME}.git"
+            },
+            "keywords": [],
+            "author": "${OWNER}",
+            "license": "MIT",
+            "bugs": {
+              "url": "https://github.com/${OWNER}/${NAME}/issues"
+            },
+            "homepage": "https://github.com/${OWNER}/${NAME}#readme",
+            "publishConfig": {
+              "registry": "https://npm.pkg.github.com"
+            },
+            "dependencies": {},
+            "devDependencies": {
+              "typescript": "^5.0.0",
+              "vite": "^5.0.0",
+              "@types/node": "^20.0.0"
+            }
+          }
+          EOF
+            echo "Created new package.json"
+          else
+            echo "Updating existing package.json..."
+            # Get the repository owner and name
+            OWNER=$(echo ${{ github.repository }} | cut -d'/' -f1)
+            NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
+            
+            # Update essential fields in existing package.json
+            jq --arg name "@$OWNER/$NAME" \
+               --arg repo "${{ github.repository }}" \
+               --arg owner "$OWNER" \
+               '.name = $name | 
+                .repository.url = "git+https://github.com/" + $repo + ".git" |
+                .bugs.url = "https://github.com/" + $repo + "/issues" |
+                .homepage = "https://github.com/" + $repo + "#readme" |
+                .publishConfig.registry = "https://npm.pkg.github.com" |
+                .author = $owner' \
+               package.json > package.json.tmp && mv package.json.tmp package.json
+            
+            echo "Updated package.json"
+          fi
+
+      - name: Setup .npmrc for GitHub Packages
+        run: |
+          echo "@${GITHUB_REPOSITORY_OWNER}:registry=https://npm.pkg.github.com" >> .npmrc
+          echo "//npm.pkg.github.com/:_authToken=\${GITHUB_TOKEN}" >> .npmrc
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   
       - name: Get branch name
         id: get_branch
@@ -127,11 +200,187 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Update package version
+        run: |
+          # If this is a prerelease/feature branch, add the dist-tag
+          if [ "${{ steps.get_version.outputs.channel }}" != "" ]; then
+            DIST_TAG="${{ steps.get_version.outputs.channel }}"
+          else
+            DIST_TAG="latest"
+          fi
+          
+          # If we have a new version, update the version in package.json
+          if [ "${{ steps.get_version.outputs.newVersion }}" == "true" ]; then
+            npm version ${{ steps.get_version.outputs.version }} --no-git-tag-version
+          fi
+
+      - name: Install dependencies and types
+        run: |
+          # First install core dependencies
+          npm install --save-dev typescript@latest vite@latest @vitejs/plugin-react@latest
+          
+          # Install @types/node explicitly
+          npm install --save-dev @types/node
+          
+          # Display installed versions for debugging
+          echo "Installed versions:"
+          npm list typescript @types/node vite @vitejs/plugin-react
+
+      - name: Create tsconfig.json if not exists
+        run: |
+          echo "Creating/updating tsconfig.json..."
+          cat > tsconfig.json << EOF
+            {
+              "compilerOptions": {
+                "target": "ES2020",
+                "useDefineForClassFields": true,
+                "lib": ["ES2020", "DOM", "DOM.Iterable"],
+                "module": "ESNext",
+                "skipLibCheck": true,
+                "moduleResolution": "node",
+                "allowSyntheticDefaultImports": true,
+                "resolveJsonModule": true,
+                "isolatedModules": true,
+                "declaration": true,
+                "declarationDir": "./dist/types",
+                "jsx": "react-jsx",
+                "strict": true,
+                "noUnusedLocals": true,
+                "noUnusedParameters": true,
+                "noFallthroughCasesInSwitch": true,
+                "types": ["node"],
+                "paths": {
+                  "@/*": ["./src/*"]
+                }
+              },
+              "include": ["src"],
+              "references": [{ "path": "./tsconfig.node.json" }]
+            }
+            EOF
+              echo "Created tsconfig.json"
+            fi
+
+      - name: Create tsconfig.node.json if not exists
+        run: |
+          if [ ! -f "tsconfig.node.json" ]; then
+            echo "Creating tsconfig.node.json..."
+            cat > tsconfig.node.json << EOF
+          {
+            "compilerOptions": {
+              "composite": true,
+              "skipLibCheck": true,
+              "module": "ESNext",
+              "moduleResolution": "bundler",
+              "allowSyntheticDefaultImports": true,
+              "strict": true
+            },
+            "include": ["vite.config.ts"]
+          }
+          EOF
+            echo "Created tsconfig.node.json"
+          fi
+
+      - name: Create vite.config.ts if not exists
+        run: |
+          if [ ! -f "vite.config.ts" ]; then
+            echo "Creating vite.config.ts..."
+            cat > vite.config.ts << EOF
+          import { defineConfig } from 'vite'
+          import react from '@vitejs/plugin-react'
+          import path from 'path'
+
+          export default defineConfig({
+            plugins: [react()],
+            resolve: {
+              alias: {
+                '@': path.resolve(__dirname, './src'),
+              },
+            },
+            build: {
+              outDir: 'dist',
+              lib: {
+                entry: path.resolve(__dirname, 'src/index.ts'),
+                name: '${NAME}',
+                formats: ['es', 'umd'],
+                fileName: (format) => \`${NAME}.\${format}.js\`
+              },
+              rollupOptions: {
+                external: ['react', 'react-dom'],
+                output: {
+                  globals: {
+                    react: 'React',
+                    'react-dom': 'ReactDOM',
+                  },
+                },
+              },
+            },
+          })
+          EOF
+            echo "Created vite.config.ts"
+          fi
+
+      - name: Create src directory and index file if not exists
+        run: |
+          mkdir -p src
+          if [ ! -f "src/index.ts" ]; then
+            echo "Creating default src/index.ts..."
+            cat > src/index.ts << EOF
+          // Default export
+          export default {
+            name: '${NAME}',
+            version: process.env.npm_package_version
+          };
+          EOF
+            echo "Created src/index.ts"
+          fi
+
+      - name: Install project dependencies
+        run: |
+          # Remove package-lock.json if it exists to force a clean install
+          rm -f package-lock.json
+          
+          # Clean install
+          npm install
+          
+          # Verify @types/node is installed
+          if ! npm list @types/node; then
+            echo "Installing @types/node separately..."
+            npm install --save-dev @types/node
+          fi
+          
+          # Display installed versions for debugging
+          echo "Final dependency versions:"
+          npm list typescript @types/node vite @vitejs/plugin-react
         
-      - name: Build
-        run: npm run build  # Adjust this to your actual build command
+      - name: Build with type checking
+        run: |
+          echo "TypeScript version:"
+          ./node_modules/.bin/tsc --version
+          
+          echo "Node types installation status:"
+          ls -la node_modules/@types/node || echo "@types/node not found"
+          
+          echo "Contents of tsconfig.json:"
+          cat tsconfig.json
+          
+          echo "Running build..."
+          npm run build || {
+            echo "Build failed. Displaying TypeScript errors with full logging:"
+            npm run build --loglevel verbose
+            exit 1
+          }
+
+      - name: Publish to GitHub Packages
+        if: steps.get_version.outputs.newVersion == 'true'
+        run: |
+          if [ "${{ steps.get_version.outputs.channel }}" != "" ]; then
+            npm publish --tag ${{ steps.get_version.outputs.channel }}
+          else
+            npm publish
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set artifact name
         id: set_names
@@ -147,7 +396,7 @@ jobs:
 
       - name: Create Zip File
         run: |
-          zip -r "${{ steps.set_names.outputs.zip_name }}" dist/  # Adjust 'dist' to your build output directory
+          zip -r "${{ steps.set_names.outputs.zip_name }}" dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
