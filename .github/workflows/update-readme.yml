@@ -22,12 +22,6 @@ jobs:
           ref: ${{ inputs.target-branch }}
           fetch-depth: 0
 
-      - name: Checkout Reusable Workflow Repository
-        uses: actions/checkout@v3
-        with:
-          repository: PepperDash/readme-automation
-          path: readme-automation
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -42,7 +36,7 @@ jobs:
         run: |
           pwd
           ls -la
-          python readme-automation/.github/scripts/metadata.py .
+          python ${{ github.workspace }}/.github/scripts/metadata.py ${{ github.workspace }}
 
       - name: Check for Changes
         id: check_for_changes
