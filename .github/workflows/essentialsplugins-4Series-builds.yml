@@ -4,21 +4,25 @@ on:
   workflow_call:
     inputs:
       newVersion:
-        description: 'new version?'
+        description: 'New version?'
         required: true
         type: string
       version:
-        description: 'The version of the file to build and push'
+        description: 'The version of the file to build and push.'
         required: true
         type: string
       tag:
-        description: 'The tag of the image to build and push'
+        description: 'The tag of the image to build and push.'
         required: true
         type: string
       channel:
-        description: 'The channel of the image to build and push'
+        description: 'The channel of the image to build and push.'
         required: true
-        type: string 
+        type: string
+      bypassPackageCheck:
+        description: 'Set to true to bypass the package name check.'
+        required: false
+        type: boolean
       
 env:
   BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
@@ -52,13 +56,42 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: change-log
+      - name: Check Package Name
+        shell: powershell
+        run: |
+          # Extract the repository name
+          $repoFullName = "${{ github.repository }}" # Full repository name, including owner
+          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
+      
+          # Expected package name format: PepperDash.Essentials.Plugins.Make.Model
+          $expectedPackageName = "PepperDash.Essentials.Plugins." + ($repoName -replace 'epi-', '').Replace('-', '.')
+      
+          # Display expected package name
+          Write-Output "Expected Package Name: $expectedPackageName"
+      
+          # Locate the generated NuGet package in the output directory
+          $packageFile = Get-ChildItem -Path .\output -Filter *.nupkg -Recurse
+          if ($null -eq $packageFile) {
+            Write-Error "No NuGet package found in the output directory."
+            Write-Output "::error::No NuGet package found in the output directory. Please check if the build generated the package correctly."
+            exit 1
+          }
+      
+          # Extract the package name from the file (ignore version)
+          $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
+      
+          # Compare the actual package name with the expected name (case insensitive)
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
+            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
+            exit 1
+          }
       - name: Upload Release
         if: ${{ inputs.newVersion == 'true' }}
         id: create_release
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: 'output\*.*(cpz|cplz)'      
+          artifacts: 'output\**\*.*(cpz|cplz)'          
           prerelease: ${{ inputs.channel != '' }}
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
