@@ -21,6 +21,14 @@ jobs:
         with:
           ref: ${{ inputs.target-branch }}
           fetch-depth: 0
+          path: repo
+
+      - name: Checkout Workflow Repository
+        uses: actions/checkout@v3
+        with:
+          repository: PepperDash/workflow-templates
+          ref: add-feedbacks
+          path: workflow-templates
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -33,12 +41,12 @@ jobs:
           # pip install -r requirements.txt
 
       - name: Run README Update Script
+        working-directory: repo
         run: |
-          pwd
-          ls -la
-          python ${{ github.workspace }}/.github/scripts/metadata.py ${{ github.workspace }}
+          python ../workflow-templates/.github/scripts/metadata.py .
 
       - name: Check for Changes
+        working-directory: repo
         id: check_for_changes
         run: |
           if git diff --quiet; then
@@ -48,10 +56,12 @@ jobs:
           fi
 
       - name: Create or Switch to 'robot-docs' Branch
+        working-directory: repo
         run: |
           git checkout -B robot-docs
   
       - name: Commit and Push Changes to 'robot-docs' Branch
+        working-directory: repo
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
