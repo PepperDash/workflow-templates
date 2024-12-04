@@ -63,6 +63,30 @@ def extract_public_methods(file_content):
     logging.debug(f"Public methods extracted: {methods}")
     return methods
 
+def extract_public_feedbacks(file_content):
+    logging.debug("Extracting public feedbacks.")
+    # Remove commented lines
+    uncommented_content = re.sub(r'//.*', '', file_content)
+    
+    # Define patterns for different feedback types
+    bool_feedback_pattern = re.compile(r'public\s+BoolFeedback\s+(\w+)')
+    int_feedback_pattern = re.compile(r'public\s+IntFeedback\s+(\w+)')
+    string_feedback_pattern = re.compile(r'public\s+StringFeedback\s+(\w+)')
+    
+    # Find all matches
+    bool_feedbacks = bool_feedback_pattern.findall(uncommented_content)
+    int_feedbacks = int_feedback_pattern.findall(uncommented_content)
+    string_feedbacks = string_feedback_pattern.findall(uncommented_content)
+    
+    feedbacks = {
+        'bool_feedbacks': bool_feedbacks,
+        'int_feedbacks': int_feedbacks,
+        'string_feedbacks': string_feedbacks
+    }
+    
+    logging.debug(f"Extracted feedbacks: {feedbacks}")
+    return feedbacks
+
 def read_files_in_directory(directory):
     logging.debug(f"Reading files in directory: {directory}")
     all_interfaces = []
@@ -70,6 +94,11 @@ def read_files_in_directory(directory):
     all_supported_types = []
     all_minimum_versions = []
     all_public_methods = []
+    all_feedbacks = {
+        'bool_feedbacks': [],
+        'int_feedbacks': [],
+        'string_feedbacks': []
+    }
 
     for root, _, files in os.walk(directory):
         logging.debug(f"Entering directory: {root}")
@@ -83,6 +112,7 @@ def read_files_in_directory(directory):
                     supported_types = extract_supported_types(content)
                     minimum_version = extract_minimum_essentials_framework_version(content)
                     public_methods = extract_public_methods(content)
+                    feedbacks = extract_public_feedbacks(content)
 
                     all_interfaces.extend(interfaces)
                     all_base_classes.extend(base_classes)
@@ -90,6 +120,9 @@ def read_files_in_directory(directory):
                     if minimum_version:
                         all_minimum_versions.append(minimum_version)
                     all_public_methods.extend(public_methods)
+                    all_feedbacks['bool_feedbacks'].extend(feedbacks['bool_feedbacks'])
+                    all_feedbacks['int_feedbacks'].extend(feedbacks['int_feedbacks'])
+                    all_feedbacks['string_feedbacks'].extend(feedbacks['string_feedbacks'])
 
     logging.debug("Finished reading all files.")
     return {
@@ -97,7 +130,8 @@ def read_files_in_directory(directory):
         "base_classes": all_base_classes,
         "supported_types": all_supported_types,
         "minimum_versions": all_minimum_versions,
-        "public_methods": all_public_methods
+        "public_methods": all_public_methods,
+        "feedbacks": all_feedbacks
     }
 
 def read_class_names_and_bases_from_files(directory):
@@ -481,6 +515,9 @@ if __name__ == "__main__":
     supported_types_markdown = generate_markdown_list(results["supported_types"], "Supported Types")
     minimum_versions_markdown = generate_markdown_list(results["minimum_versions"], "Minimum Essentials Framework Versions")
     public_methods_markdown = generate_markdown_list(results["public_methods"], "Public Methods")
+    bool_feedbacks_markdown = generate_markdown_list(results["feedbacks"]["bool_feedbacks"], "Bool Feedbacks")
+    int_feedbacks_markdown = generate_markdown_list(results["feedbacks"]["int_feedbacks"], "Int Feedbacks")
+    string_feedbacks_markdown = generate_markdown_list(results["feedbacks"]["string_feedbacks"], "String Feedbacks")
 
     # Generate Join Maps markdown
     class_defs = read_class_names_and_bases_from_files(project_directory)
@@ -515,6 +552,9 @@ if __name__ == "__main__":
     readme_content = update_readme_section(readme_content, "Interfaces Implemented", interfaces_markdown)
     readme_content = update_readme_section(readme_content, "Base Classes", base_classes_markdown)
     readme_content = update_readme_section(readme_content, "Public Methods", public_methods_markdown)
+    readme_content = update_readme_section(readme_content, "Bool Feedbacks", bool_feedbacks_markdown)
+    readme_content = update_readme_section(readme_content, "Int Feedbacks", int_feedbacks_markdown)
+    readme_content = update_readme_section(readme_content, "String Feedbacks", string_feedbacks_markdown)
 
     # Write the updated content back to README.md
     with open(readme_path, 'w', encoding='utf-8') as f:
