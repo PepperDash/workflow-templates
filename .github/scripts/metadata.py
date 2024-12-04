@@ -64,24 +64,42 @@ def extract_public_methods(file_content):
     return methods
 
 def extract_public_feedbacks(file_content):
-    logging.debug("Extracting public feedbacks.")
+    logging.debug("Starting feedback extraction...")
+    logging.debug(f"Input content length: {len(file_content)}")
+    
     # Remove commented lines
     uncommented_content = re.sub(r'//.*', '', file_content)
+    logging.debug(f"Content length after removing comments: {len(uncommented_content)}")
     
     # Define patterns for different feedback types with property syntax
-    bool_feedback_pattern = re.compile(r'public\s+BoolFeedback\s+(\w+)(?:\s*{[^}]*})?')
-    int_feedback_pattern = re.compile(r'public\s+IntFeedback\s+(\w+)(?:\s*{[^}]*})?')
-    string_feedback_pattern = re.compile(r'public\s+StringFeedback\s+(\w+)(?:\s*{[^}]*})?')
+    bool_feedback_pattern = r'public\s+BoolFeedback\s+(\w+)(?:\s*{[^}]*}|\s*;|\s*=)'
+    int_feedback_pattern = r'public\s+IntFeedback\s+(\w+)(?:\s*{[^}]*}|\s*;|\s*=)'
+    string_feedback_pattern = r'public\s+StringFeedback\s+(\w+)(?:\s*{[^}]*}|\s*;|\s*=)'
+    
+    logging.debug(f"Using patterns:")
+    logging.debug(f"Bool pattern: {bool_feedback_pattern}")
+    logging.debug(f"Int pattern: {int_feedback_pattern}")
+    logging.debug(f"String pattern: {string_feedback_pattern}")
     
     # Find all matches
-    bool_feedbacks = bool_feedback_pattern.findall(uncommented_content)
-    int_feedbacks = int_feedback_pattern.findall(uncommented_content)
-    string_feedbacks = string_feedback_pattern.findall(uncommented_content)
+    bool_feedbacks = re.findall(bool_feedback_pattern, uncommented_content)
+    int_feedbacks = re.findall(int_feedback_pattern, uncommented_content)
+    string_feedbacks = re.findall(string_feedback_pattern, uncommented_content)
+    
+    logging.debug(f"Raw matches found:")
+    logging.debug(f"Bool feedbacks: {bool_feedbacks}")
+    logging.debug(f"Int feedbacks: {int_feedbacks}")
+    logging.debug(f"String feedbacks: {string_feedbacks}")
     
     # Filter out any empty matches and strip whitespace
     bool_feedbacks = [f.strip() for f in bool_feedbacks if f.strip()]
     int_feedbacks = [f.strip() for f in int_feedbacks if f.strip()]
     string_feedbacks = [f.strip() for f in string_feedbacks if f.strip()]
+    
+    logging.debug(f"After filtering:")
+    logging.debug(f"Bool feedbacks: {bool_feedbacks}")
+    logging.debug(f"Int feedbacks: {int_feedbacks}")
+    logging.debug(f"String feedbacks: {string_feedbacks}")
     
     feedbacks = {
         'bool_feedbacks': bool_feedbacks,
@@ -89,7 +107,7 @@ def extract_public_feedbacks(file_content):
         'string_feedbacks': string_feedbacks
     }
     
-    logging.debug(f"Extracted feedbacks: {feedbacks}")
+    logging.debug(f"Final extracted feedbacks: {feedbacks}")
     return feedbacks
 
 def read_files_in_directory(directory):
@@ -110,26 +128,36 @@ def read_files_in_directory(directory):
         for file in files:
             if file.endswith('.cs'):
                 file_path = os.path.join(root, file)
-                logging.debug(f"Processing file: {file_path}")
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    interfaces, base_classes = extract_implemented_interfaces(content)
-                    supported_types = extract_supported_types(content)
-                    minimum_version = extract_minimum_essentials_framework_version(content)
-                    public_methods = extract_public_methods(content)
-                    feedbacks = extract_public_feedbacks(content)
+                logging.debug(f"Processing C# file: {file_path}")
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        logging.debug(f"Successfully read file: {file_path}")
+                        interfaces, base_classes = extract_implemented_interfaces(content)
+                        supported_types = extract_supported_types(content)
+                        minimum_version = extract_minimum_essentials_framework_version(content)
+                        public_methods = extract_public_methods(content)
+                        feedbacks = extract_public_feedbacks(content)
 
-                    all_interfaces.extend(interfaces)
-                    all_base_classes.extend(base_classes)
-                    all_supported_types.extend(supported_types)
-                    if minimum_version:
-                        all_minimum_versions.append(minimum_version)
-                    all_public_methods.extend(public_methods)
-                    all_feedbacks['bool_feedbacks'].extend(feedbacks['bool_feedbacks'])
-                    all_feedbacks['int_feedbacks'].extend(feedbacks['int_feedbacks'])
-                    all_feedbacks['string_feedbacks'].extend(feedbacks['string_feedbacks'])
+                        all_interfaces.extend(interfaces)
+                        all_base_classes.extend(base_classes)
+                        all_supported_types.extend(supported_types)
+                        if minimum_version:
+                            all_minimum_versions.append(minimum_version)
+                        all_public_methods.extend(public_methods)
+                        all_feedbacks['bool_feedbacks'].extend(feedbacks['bool_feedbacks'])
+                        all_feedbacks['int_feedbacks'].extend(feedbacks['int_feedbacks'])
+                        all_feedbacks['string_feedbacks'].extend(feedbacks['string_feedbacks'])
+                        
+                        logging.debug(f"Extracted from {file_path}:")
+                        logging.debug(f"- Interfaces: {interfaces}")
+                        logging.debug(f"- Base classes: {base_classes}")
+                        logging.debug(f"- Feedbacks: {feedbacks}")
+                except Exception as e:
+                    logging.error(f"Error processing file {file_path}: {str(e)}")
 
     logging.debug("Finished reading all files.")
+    logging.debug(f"Total feedbacks collected: {all_feedbacks}")
     return {
         "interfaces": all_interfaces,
         "base_classes": all_base_classes,
@@ -506,7 +534,12 @@ def remove_duplicates_preserve_order(seq):
     return unique_list
 
 if __name__ == "__main__":
-    project_directory = os.path.abspath("./")
+    import sys
+    if len(sys.argv) > 1:
+        project_directory = os.path.abspath(sys.argv[1])
+    else:
+        project_directory = os.path.abspath("./")
+    
     logging.info(f"Starting processing in project directory: {project_directory}")
     results = read_files_in_directory(project_directory)
 
