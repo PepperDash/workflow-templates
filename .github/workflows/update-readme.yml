@@ -40,7 +40,9 @@ jobs:
 
       - name: Run README Update Script
         run: |
-          python readme-automation/.github/scripts/metadata.py
+          pwd
+          ls -la
+          python readme-automation/.github/scripts/metadata.py .
 
       - name: Check for Changes
         id: check_for_changes
