@@ -68,15 +68,20 @@ def extract_public_feedbacks(file_content):
     # Remove commented lines
     uncommented_content = re.sub(r'//.*', '', file_content)
     
-    # Define patterns for different feedback types
-    bool_feedback_pattern = re.compile(r'public\s+BoolFeedback\s+(\w+)')
-    int_feedback_pattern = re.compile(r'public\s+IntFeedback\s+(\w+)')
-    string_feedback_pattern = re.compile(r'public\s+StringFeedback\s+(\w+)')
+    # Define patterns for different feedback types with property syntax
+    bool_feedback_pattern = re.compile(r'public\s+BoolFeedback\s+(\w+)(?:\s*{[^}]*})?')
+    int_feedback_pattern = re.compile(r'public\s+IntFeedback\s+(\w+)(?:\s*{[^}]*})?')
+    string_feedback_pattern = re.compile(r'public\s+StringFeedback\s+(\w+)(?:\s*{[^}]*})?')
     
     # Find all matches
     bool_feedbacks = bool_feedback_pattern.findall(uncommented_content)
     int_feedbacks = int_feedback_pattern.findall(uncommented_content)
     string_feedbacks = string_feedback_pattern.findall(uncommented_content)
+    
+    # Filter out any empty matches and strip whitespace
+    bool_feedbacks = [f.strip() for f in bool_feedbacks if f.strip()]
+    int_feedbacks = [f.strip() for f in int_feedbacks if f.strip()]
+    string_feedbacks = [f.strip() for f in string_feedbacks if f.strip()]
     
     feedbacks = {
         'bool_feedbacks': bool_feedbacks,
