@@ -111,7 +111,7 @@ jobs:
 
       - name: Setup Nuget
         run: | 
-          nuget sources add -name github -source https://nuget.pkg.github.com/pepperdash/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           nuget setApiKey ${{ secrets.GITHUB_TOKEN }} -Source github          
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
 
