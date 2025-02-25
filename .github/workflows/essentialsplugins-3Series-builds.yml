@@ -197,7 +197,6 @@ jobs:
               <file src='LICENSE.md' target=''/>
               <file src='README.md' target=''/>
               <file src='./output/**' target='lib\net35'/>
-              <file src='./output/**' target='lib\net47'/>
             </files>
           </package>
           "@
