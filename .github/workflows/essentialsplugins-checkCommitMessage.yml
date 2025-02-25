@@ -1,0 +1,39 @@
+name: Commit Message Check
+
+on:
+  workflow_call:
+    inputs:
+      bypassCommitCheck:
+        description: 'Set to true to bypass the commit message check.'
+        required: false
+        type: boolean
+
+jobs:
+  check_commit_message:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.bypassCommitCheck != 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch the full history to make HEAD~1 references valid
+
+      - name: Check Commit Messages
+        shell: bash
+        run: |
+          # Retrieve the latest commit message
+          COMMIT_MSGS=$(git log --pretty=format:"%s" -n 1)
+      
+          # Define a regular expression to match the conventional commit pattern or a standard merge commit message
+          CONVENTIONAL_REGEX="^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert|wip)(\\(.+\\))?:\\s.+"
+          MERGE_COMMIT_REGEX="^(Merge (branch|remote-tracking branch|commit) '.*'( into .*)?)$"
+      
+          # Loop through each commit message and check against the patterns
+          for COMMIT_MSG in "$COMMIT_MSGS"; do
+            if [[ ! $COMMIT_MSG =~ $CONVENTIONAL_REGEX && ! $COMMIT_MSG =~ $MERGE_COMMIT_REGEX ]]; then
+              echo "::error::Commit message '$COMMIT_MSG' does not follow the Conventional Commits format or merge commit format. Please use a message like 'feat: add new feature' or 'fix(scope): correct issue'."
+              exit 1
+            else
+              echo "Commit message '$COMMIT_MSG' is valid."
+            fi
+          done
