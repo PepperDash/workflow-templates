@@ -58,7 +58,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: 'output\*.*(cpz|cplz)'      
+          artifacts: 'output\*.*(clz|cpz|cplz)'      
           prerelease: ${{ inputs.channel != '' }}
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
