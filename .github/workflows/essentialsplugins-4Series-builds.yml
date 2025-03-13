@@ -109,14 +109,14 @@ jobs:
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
 
-      - name: Publish to Github Nuget
-        run: nuget push .\output\*.nupkg -Source github -ApiKey ${{secrets.GITHUB_TOKEN }}
+      - name: Setup and Publish nuget package to github feed
+        run: |
+          nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          run: nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Setup Nuget
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
-        run: | 
-          nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          nuget setApiKey ${{ secrets.GITHUB_TOKEN }} -Source github          
+        run: |      
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
 
       - name: Publish to Nuget
