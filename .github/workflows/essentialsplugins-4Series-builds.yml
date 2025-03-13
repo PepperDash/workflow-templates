@@ -109,7 +109,7 @@ jobs:
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
 
-      - name: Setup and Publish nuget package to github feed
+      - name: Setup and Publish to github feed
         run: |
           nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
