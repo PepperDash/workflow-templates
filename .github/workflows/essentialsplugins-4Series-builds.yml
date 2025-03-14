@@ -4,21 +4,25 @@ on:
   workflow_call:
     inputs:
       newVersion:
-        description: 'new version?'
+        description: 'New version?'
         required: true
         type: string
       version:
-        description: 'The version of the file to build and push'
+        description: 'The version of the file to build and push.'
         required: true
         type: string
       tag:
-        description: 'The tag of the image to build and push'
+        description: 'The tag of the image to build and push.'
         required: true
         type: string
       channel:
-        description: 'The channel of the image to build and push'
+        description: 'The channel of the image to build and push.'
         required: true
-        type: string 
+        type: string
+      bypassPackageCheck:
+        description: 'Set to true to bypass the package name check.'
+        required: false
+        type: boolean
       
 env:
   BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
@@ -26,9 +30,9 @@ jobs:
   Build_Project_4-Series:
     runs-on: windows-latest
     steps:
-      # First we checkout the source repo
       - name: Checkout repo
         uses: actions/checkout@v4     
+
       - name: Get SLN Info
         id: get_sln_info
         shell: powershell
@@ -42,33 +46,79 @@ jobs:
           $solution_path = $solution_path -replace "(?:[^\\]*\\){4}", ""
           Write-Output $solution_path
           echo "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append          
+
       - name: Setup MS Build
         uses: microsoft/setup-msbuild@v1.1
-      - name: restore Nuget Packages
+
+      - name: Restore Nuget Packages
         run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
+
       - name: Build Solution        
         run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m   
+
       - name: Get release notes
         uses: actions/download-artifact@v4
         with:
           name: change-log
+
+      - name: Check Package Name
+        shell: powershell
+        run: |
+          if ("${{ inputs.bypassPackageCheck }}" -eq "true") {
+            Write-Output "Bypassing package name check."
+            exit 0
+          }
+
+          # Extract the repository name
+          $repoFullName = "${{ github.repository }}" # Full repository name, including owner
+          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
+      
+          # Expected package name format: PepperDash.Essentials.Plugins.Make.Model
+          $expectedPackageName = "PepperDash.Essentials.Plugins." + ($repoName -replace 'epi-', '').Replace('-', '.')
+
+          # Debug output
+          Write-Output "Repository Name: $repoName"
+          Write-Output "Expected Package Name: $expectedPackageName"
+      
+          # Locate the generated NuGet package in the output directory
+          $packageFile = Get-ChildItem -Path .\output -Filter *.nupkg -Recurse
+          if ($null -eq $packageFile) {
+            Write-Error "No NuGet package found in the output directory."
+            Write-Output "::error::No NuGet package found in the output directory. Please check if the build generated the package correctly."
+            exit 1
+          }
+      
+          # Extract the package name from the file (ignore version)
+          $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
+      
+          # Compare the actual package name with the expected name (case insensitive)
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
+            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
+            exit 1
+          }
+
       - name: Upload Release
         if: ${{ inputs.newVersion == 'true' }}
         id: create_release
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: 'output\*.*(clz|cpz|cplz)'      
+          artifacts: 'output\**\*.*(cpz|cplz)'          
           prerelease: ${{ inputs.channel != '' }}
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
-      - name: Setup Nuget
-        run: | 
+
+      - name: Setup and Publish to github feed
+        run: |
           nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          nuget setApiKey ${{ secrets.GITHUB_TOKEN }} -Source github          
+          nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+
+      - name: Setup Nuget
+        if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
+        run: |      
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
+
       - name: Publish to Nuget
+        if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
         run: nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
-      - name: Publish to Github Nuget
-        run: nuget push .\output\*.nupkg -Source github -ApiKey ${{secrets.GITHUB_TOKEN }}
