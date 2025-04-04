@@ -221,12 +221,50 @@ jobs:
       - name: Create nuget package
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
         run: nuget pack "./project.nuspec" -version ${{ env.VERSION }}  
-      # Pushes to internal github registry
+      
+      - name: Validate Package Name
+        shell: powershell
+        run: |
+          # Extract the repository name
+          $repoFullName = "${{ github.repository }}" # Full repository name, including owner
+          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
+      
+          # Expected package name format based on repo name
+          $makeModelParts = $repoName -split '-'
+          $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' 
+          $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
+          $makeModel = $title -replace ' ', ''
+          $expectedPackageName = "PepperDash.Essentials.Plugin." + $makeModel
+
+          # Debug output
+          Write-Output "Repository Name: $repoName"
+          Write-Output "Expected Package Name: $expectedPackageName"
+      
+          # Locate the generated NuGet package
+          $packageFile = Get-ChildItem -Path . -Filter *.nupkg -Recurse
+          if ($null -eq $packageFile) {
+            Write-Error "No NuGet package found."
+            exit 1
+          }
+      
+          # Extract the package name from the file (ignore version)
+          $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
+      
+          # Compare the actual package name with the expected name (case insensitive)
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
+            Write-Error "Package name mismatch: Expected '$expectedPackageName' but found '$packageName'."
+            exit 1
+          }
           
+          # Store the validated package path for later use
+          echo "PACKAGE_PATH=$($packageFile.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      
+      # Pushes to internal github registry   
       - name: Setup and Publish to github feed
         run: |
           nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          # nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          nuget push "${{ env.PACKAGE_PATH }}" -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Setup Nuget
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
