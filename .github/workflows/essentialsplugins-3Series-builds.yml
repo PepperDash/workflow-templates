@@ -226,7 +226,7 @@ jobs:
       - name: Setup and Publish to github feed
         run: |
           nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          nuget push ./output/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Setup Nuget
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
