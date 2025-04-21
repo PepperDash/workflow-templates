@@ -74,13 +74,7 @@ jobs:
               }
           }
           # validate arguments
-          $r = [System.Text.RegularExpressions.Regex]::Match($Env:VERSION, "\d+\.\d+\.\d+.*");
-          
-          if ($Env:VERSION -notmatch '^\d+\.\d+\.\d+$') {
-            Write-Error "Invalid version format: $Env:VERSION. Expected format is x.y.z."
-            exit 1
-          }
-          
+          $r = [System.Text.RegularExpressions.Regex]::Match($Env:VERSION, "\d+\.\d+\.\d+.*");          
           if ($r.Success) {
               Write-Output "Updating Assembly Version to $Env:VERSION ...";
               Update-AllAssemblyInfoFiles $Env:VERSION;
