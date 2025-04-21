@@ -189,7 +189,7 @@ jobs:
               <license type='file'>LICENSE.md</license>
               <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
               <copyright>Copyright $year</copyright>
-              <description>${{ github.repository_name }} Epi</description>
+              <description>$repoName Epi</description>
               <tags>crestron 3series</tags>
               <repository type='git' url='https://github.com/${{ github.repository }}'/>
             </metadata>
@@ -214,20 +214,16 @@ jobs:
         uses: nuget/setup-nuget@v2        
       
         # Creating nuget Packages
-      - name: Add Github Packages source
-        if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        run: nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-    
       - name: Create nuget package
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        run: nuget pack "./project.nuspec" -version ${{ env.VERSION }}  
+        run: nuget pack "./project.nuspec" -version ${{ env.VERSION }} -OutputDirectory ./output
+      
       # Pushes to internal github registry
-          
       - name: Setup and Publish to github feed
         run: |
-          nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          nuget push ./output/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          nuget push ./output/*.nupkg -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -apikey ${{ secrets.GITHUB_TOKEN }} 
 
+      # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Setup Nuget
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
         run: |      
@@ -253,4 +249,4 @@ jobs:
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
-      
+
