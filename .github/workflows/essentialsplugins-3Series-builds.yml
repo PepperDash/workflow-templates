@@ -231,7 +231,11 @@ jobs:
             Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
             exit 1
           }          
-          nuget push ./output/*.nupkg -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          # nuget push ./output/*.nupkg -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
+            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          }
+          nuget push ./output/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Setup Nuget
