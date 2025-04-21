@@ -75,6 +75,12 @@ jobs:
           }
           # validate arguments
           $r = [System.Text.RegularExpressions.Regex]::Match($Env:VERSION, "\d+\.\d+\.\d+.*");
+          
+          if ($Env:VERSION -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Invalid version format: $Env:VERSION. Expected format is x.y.z."
+            exit 1
+          }
+          
           if ($r.Success) {
               Write-Output "Updating Assembly Version to $Env:VERSION ...";
               Update-AllAssemblyInfoFiles $Env:VERSION;
@@ -121,6 +127,7 @@ jobs:
         shell: powershell
         run: |
           $destination = "$($Env:GITHUB_WORKSPACE)\output"
+          echo "Destination: $destination"
           New-Item -ItemType Directory -Force -Path ($destination)
           Get-ChildItem ($destination)
           $exclusions = "packages"
@@ -216,11 +223,20 @@ jobs:
         # Creating nuget Packages
       - name: Create nuget package
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        run: nuget pack "./project.nuspec" -version ${{ env.VERSION }} -OutputDirectory ./output
+        run: |
+          if (-not (Test-Path -Path "./project.nuspec")) {
+            Write-Error "NuGet nuspec file not foundCheck if the build process created the package correctly."
+            exit 1
+          } 
+          nuget pack "./project.nuspec" -version ${{ env.VERSION }} -OutputDirectory ./output
       
       # Pushes to internal github registry
       - name: Setup and Publish to github feed
         run: |
+          if (-not (Test-Path -Path "./output/*.nupkg")) {
+            Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            exit 1
+          }          
           nuget push ./output/*.nupkg -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -apikey ${{ secrets.GITHUB_TOKEN }} 
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
