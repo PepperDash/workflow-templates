@@ -74,7 +74,7 @@ jobs:
               }
           }
           # validate arguments
-          $r = [System.Text.RegularExpressions.Regex]::Match($Env:VERSION, "\d+\.\d+\.\d+.*");
+          $r = [System.Text.RegularExpressions.Regex]::Match($Env:VERSION, "\d+\.\d+\.\d+.*");          
           if ($r.Success) {
               Write-Output "Updating Assembly Version to $Env:VERSION ...";
               Update-AllAssemblyInfoFiles $Env:VERSION;
@@ -121,6 +121,7 @@ jobs:
         shell: powershell
         run: |
           $destination = "$($Env:GITHUB_WORKSPACE)\output"
+          echo "Destination: $destination"
           New-Item -ItemType Directory -Force -Path ($destination)
           Get-ChildItem ($destination)
           $exclusions = "packages"
@@ -189,7 +190,7 @@ jobs:
               <license type='file'>LICENSE.md</license>
               <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
               <copyright>Copyright $year</copyright>
-              <description>${{ github.repository_name }} Epi</description>
+              <description>$repoName Epi</description>
               <tags>crestron 3series</tags>
               <repository type='git' url='https://github.com/${{ github.repository }}'/>
             </metadata>
@@ -214,20 +215,32 @@ jobs:
         uses: nuget/setup-nuget@v2        
       
         # Creating nuget Packages
-      - name: Add Github Packages source
-        if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        run: nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username Pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-    
       - name: Create nuget package
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        run: nuget pack "./project.nuspec" -version ${{ env.VERSION }}  
+        run: |
+          if (-not (Test-Path -Path "./project.nuspec")) {
+            Write-Error "NuGet nuspec file not foundCheck if the build process created the package correctly."
+            exit 1
+          } 
+          nuget pack "./project.nuspec" -version ${{ env.VERSION }} -OutputDirectory ./output
+      
       # Pushes to internal github registry
-          
       - name: Setup and Publish to github feed
         run: |
-          nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          nuget push ./output/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          # if (-not (Test-Path -Path "./output/*.nupkg")) {
+          if (-not (Test-Path -Path ".\output\*.nupkg")) {
+            Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            exit 1
+          }          
+          # nuget push ./output/*.nupkg -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
+            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          }
+          # nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          # nuget push ./output/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
 
+      # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Setup Nuget
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
         run: |      
@@ -253,4 +266,4 @@ jobs:
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
-      
+
