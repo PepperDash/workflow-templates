@@ -109,7 +109,7 @@ jobs:
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
 
-      - name: Setup and Publish to github feed
+      - name: Setup and Publish to GitHub feed
         run: |
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
             Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
