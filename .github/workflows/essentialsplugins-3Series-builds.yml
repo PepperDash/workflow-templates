@@ -141,19 +141,14 @@ jobs:
               $_;
             }
           } | Copy-Item -Destination ($destination) -Force
-          Write-Host "Getting matching files..."
-          # Get any files from the output folder that match the following extensions
+          # Write-Host "Getting matching files..."
+          # # Get any files from the output folder that match the following extensions
           Get-ChildItem -Path $destination | Where-Object {($_.Extension -eq ".clz") -or ($_.Extension -eq ".cpz" -or ($_.Extension -eq ".cplz"))} | ForEach-Object { 
-            # Replace the extensions with dll and xml and create an array 
-            $filenames = @($($_ -replace "cpz|clz|cplz", "dll"), $($_ -replace "cpz|clz|cplz", "xml"))
-            Write-Host "Filenames:"
-            Write-Host $filenames
-            if ($filenames.length -gt 0) {
-              # Attempt to get the files and return them to the output directory
-              Get-ChildItem -Recurse -Path "$($Env:GITHUB_WORKSPACE)\src" -include $filenames | Copy-Item -Destination ($destination) -Force
-            }
+            # Rename the Crestron files to include the version number            
+            Rename-Item -NewName { "$($_.BaseName)-$($Env:VERSION)$($_.Extension)" }
+            # Write the output to the summary
+            Write-Output "$($_.BaseName)-$($Env:VERSION)$($_.Extension)" >> $Env:GITHUB_STEP_SUMMARY
           }
-          Get-ChildItem -Path $destination\*.cplz | Rename-Item -NewName { "$($_.BaseName)-$($Env:VERSION)$($_.Extension)" } | Write-Host
           Get-ChildItem -Path $destination
         
       - name: Remove Existing Nuspec Files
@@ -225,19 +220,15 @@ jobs:
           nuget pack "./project.nuspec" -version ${{ env.VERSION }} -OutputDirectory ./output
       
       # Pushes to internal github registry
-      - name: Setup and Publish to github feed
+      - name: Setup and Publish to GitHub feed
         run: |
-          # if (-not (Test-Path -Path "./output/*.nupkg")) {
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
             Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
             exit 1
           }          
-          # nuget push ./output/*.nupkg -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
-          # nuget push **/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
-          # nuget push ./output/*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
           nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
@@ -261,7 +252,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: output\*.*(cplz|dll|xml)
+          artifacts: output\*.*(cpz|cplz)
           prerelease: ${{ inputs.channel != '' }}
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
