@@ -38,13 +38,7 @@ jobs:
       # Fetch all tags
       - name: Fetch tags
         run: git fetch --tags
-      # Generate the appropriate version number
-      # - name: Set Version Number
-      #   shell: powershell
-      #   run: |
-      #     $version = ./.github/scripts/GenerateVersionNumber.ps1
-      #     echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      # Use the version number to set the version of the assemblies
+      # Update AssemblyInfo
       - name: Update AssemblyInfo.cs
         shell: powershell
         run: |
@@ -87,6 +81,7 @@ jobs:
           }
       - name: restore Nuget Packages
         run: nuget install .\packages.config -OutputDirectory .\packages -ExcludeVersion
+      
       # Login to Docker
       - name: Login to Docker
         uses: azure/docker-login@v1
@@ -120,36 +115,61 @@ jobs:
       - name: Zip Build Output
         shell: powershell
         run: |
-          $destination = "$($Env:GITHUB_WORKSPACE)\output"
-          echo "Destination: $destination"
-          New-Item -ItemType Directory -Force -Path ($destination)
-          Get-ChildItem ($destination)
-          $exclusions = "packages"
-          # Trying to get any .json schema files (not currently working)
-          # Gets any files with the listed extensions.
-          Get-ChildItem -recurse -Path "$($Env:GITHUB_WORKSPACE)\src" -include "*.clz", "*.cpz", "*.cplz", "*.nuspec", "*.md" | ForEach-Object {
-            $allowed = $true;
-            # Exclude any files in submodules
-            foreach ($exclude in $exclusions) {
-              if ((Split-Path $_.FullName -Parent).contains("$($exclude)")) {
-                $allowed = $false;
-                break;
-              }
-            }
-            if ($allowed) {
-              Write-Host "allowing $($_)"
-              $_;
-            }
-          } | Copy-Item -Destination ($destination) -Force
-          # Write-Host "Getting matching files..."
-          # # Get any files from the output folder that match the following extensions
-          Get-ChildItem -Path $destination | Where-Object {($_.Extension -eq ".clz") -or ($_.Extension -eq ".cpz" -or ($_.Extension -eq ".cplz"))} | ForEach-Object { 
-            # Rename the Crestron files to include the version number            
-            Rename-Item -NewName { "$($_.BaseName)-$($Env:VERSION)$($_.Extension)" }
-            # Write the output to the summary
-            Write-Output "$($_.BaseName)-$($Env:VERSION)$($_.Extension)" >> $Env:GITHUB_STEP_SUMMARY
+          # GitHub Actions environment variables
+          $sourceDir = "$Env:GITHUB_WORKSPACE/src" 
+          $destinationDir = "$Env:GITHUB_WORKSPACE/output"
+          $version = $Env:VERSION
+
+          # Define the target file extensions (with leading dot)
+          $targetExtensions = @(".cpz", ".clz", ".cplz")
+
+          # Create the include patterns for Get-ChildItem -Include
+          $includePatterns = $targetExtensions | ForEach-Object { "*$_" }
+
+          Write-Output "Source Directory: $sourceDir"
+          Write-Output "Destination Directory: $destinationDir"
+          Write-Output "Version: $version"
+
+          # Create the destination directory if it doesn't exist.
+          New-Item -ItemType Directory -Force -Path $destinationDir
+
+          Write-Output "Searching for files with extensions $($targetExtensions -join ', ') in $sourceDir..."
+
+          # Find files recursively in the source directory with the specified extensions
+          # and copy them to the destination directory.
+          Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | ForEach-Object {
+              Write-Output "Copying $($_.FullName) to $destinationDir"
+              $_ | Copy-Item -Destination $destinationDir -Force
           }
-          Get-ChildItem -Path $destination
+
+          Write-Output "File copy process completed."
+          Write-Output "Contents of destination directory ($destinationDir):"
+          Get-ChildItem -Path $destinationDir
+
+          Write-Output "Renaming files in $destinationDir to include version '$version'..."
+
+          # Rename the copied files in the destination directory
+          # Use Where-Object for more reliable filtering within the specific directory
+          Get-ChildItem -Path $destinationDir | Where-Object { $targetExtensions -contains $_.Extension } | ForEach-Object {
+              $oldName = $_.Name
+              $baseName = $_.BaseName
+              $extension = $_.Extension # Includes the dot (.)
+              $newName = "$baseName.$version$extension"
+              $newFullName = Join-Path -Path $destinationDir -ChildPath $newName
+              
+              Write-Output "Renaming '$oldName' to '$newName'"
+              Rename-Item -Path $_.FullName -NewName $newFullName -Force
+          }
+
+          Write-Output "File renaming process completed."
+          Write-Output "Contents of destination directory ($destinationDir):"
+          Get-ChildItem -Path $destinationDir
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Output Files Summary`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Copied Files:`n"
+          Get-ChildItem -Path $destinationDir | ForEach-Object {
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($_.Name)`n"
+          }
         
       - name: Remove Existing Nuspec Files
         run: |
