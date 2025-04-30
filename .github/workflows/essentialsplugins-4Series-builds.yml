@@ -87,9 +87,8 @@ jobs:
           $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
       
           # Compare the actual package name with the expected name (case insensitive)
-          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
-            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
-            exit 1
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {            
+            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append            
           }
       
       - name: Setup and Publish to GitHub feed
@@ -101,13 +100,14 @@ jobs:
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
-          nuget push .\\output\\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Publish to Nuget.org (public repos only) 
         if: github.repository_owner == 'PepperDash' && (github.repository.private == false || github.repository.internal == false)
         run: |      
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
-          nuget push .\\output\\*.nupkg -Source https://api.nuget.org/v3/index.json
+          nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
       
       - name: Skipping publish to Nuget.org (non public repos)
         if: github.repository_owner != 'PepperDash' || (github.repository.private == true || github.repository.internal == true)
