@@ -165,8 +165,7 @@ jobs:
           Write-Output "Contents of destination directory ($destinationDir):"
           Get-ChildItem -Path $destinationDir
 
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Output Files Summary`n"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Copied Files:`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Zip Build Output Files`n"
           Get-ChildItem -Path $destinationDir | ForEach-Object {
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($_.Name)`n"
           }
@@ -186,12 +185,12 @@ jobs:
           $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
           $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
-          echo "Repo: $repoFullName"
-          echo "Repo Name: $repoName"
-          echo "Make/Model: $makeModel"
-          echo "Title: $title"
-          echo "ID: $id"
-          echo "Owner: ${{ github.repository_owner }}"
+          echo "Repo: $repoFullName" >> GITH_STEP_SUMMARY
+          echo "Repo Name: $repoName" >> GITH_STEP_SUMMARY
+          echo "Make/Model: $makeModel" >> GITH_STEP_SUMMARY
+          echo "Title: $title" >> GITH_STEP_SUMMARY
+          echo "ID: $id" >> GITH_STEP_SUMMARY
+          echo "Owner: ${{ github.repository_owner }}" >> GITH_STEP_SUMMARY
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>
@@ -249,24 +248,20 @@ jobs:
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
-          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          nuget push .\\output\\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
-      - name: Setup Nuget for Public PepperDash Repo
-        if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
+      - name: Publish to Nuget.org (public repos only) 
+        if: github.repository_owner == 'PepperDash' && (github.repository.private == false || github.repository.internal == false)
         run: |
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
+          nuget push .\\output\\*.nupkg -Source https://api.nuget.org/v3/index.json
 
-      - name: Notify Skipping Public Nuget Setup
-        # Inverse condition to the previous step
-        if: github.repository_owner != 'PepperDash' && github.repository_visibility != 'public'
-        run: echo "Skipping public NuGet, repository is not public or not owned by PepperDash." >> $GITHUB_STEP_SUMMARY
-
-      - name: Publish to Nuget
-        if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
-        run: nuget push .\\output\\*.nupkg -Source https://api.nuget.org/v3/index.json
-      
-        # Create the release on the source repo
+      - name: Skipping publish to Nuget.org (non public repos)
+        if: github.repository_owner != 'PepperDash' || (github.repository.private == true || github.repository.internal == true)
+        run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
+    
+      # Create the release on the source repo
       - name: Get release notes
         uses: actions/download-artifact@v4
         with:
@@ -283,3 +278,4 @@ jobs:
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
 
+    
