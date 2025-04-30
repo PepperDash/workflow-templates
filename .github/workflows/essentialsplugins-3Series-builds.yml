@@ -248,14 +248,16 @@ jobs:
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
-          nuget push .\\output\\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
+          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
+          echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Publish to Nuget.org (public repos only) 
         if: github.repository_owner == 'PepperDash' && (github.repository.private == false || github.repository.internal == false)
         run: |
+          echo "Publishing ${{ github.repository }} to NuGet.org" >> $GITHUB_STEP_SUMMARY          
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
-          nuget push .\\output\\*.nupkg -Source https://api.nuget.org/v3/index.json
+          nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
 
       - name: Skipping publish to Nuget.org (non public repos)
         if: github.repository_owner != 'PepperDash' || (github.repository.private == true || github.repository.internal == true)
@@ -272,7 +274,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: output\*.*(cpz|cplz)
+          artifacts: output\*.*(cpz|cplz|clz)
           prerelease: ${{ inputs.channel != '' }}
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
