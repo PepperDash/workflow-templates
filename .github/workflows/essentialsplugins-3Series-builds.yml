@@ -252,14 +252,19 @@ jobs:
           nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
-      - name: Setup Nuget
+      - name: Setup Nuget for Public PepperDash Repo
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
-        run: |      
-          nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
+        run: |
+          nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
+
+      - name: Notify Skipping Public Nuget Setup
+        # Inverse condition to the previous step
+        if: github.repository_owner != 'PepperDash' && github.repository_visibility != 'public'
+        run: echo "Skipping public NuGet, repository is not public or not owned by PepperDash." >> $GITHUB_STEP_SUMMARY
 
       - name: Publish to Nuget
         if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
-        run: nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+        run: nuget push .\\output\\*.nupkg -Source https://api.nuget.org/v3/index.json
       
         # Create the release on the source repo
       - name: Get release notes
