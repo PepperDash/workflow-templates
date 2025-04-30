@@ -2,6 +2,8 @@
 
 This reusable workflow builds Essentials Plugins targeting the Crestron 3-Series platform.
 
+**Dependency:** This workflow typically runs *after* the `essentialsplugins-getversion.yml` workflow. The outputs from `getversion` (`version`, `tag`, `newVersion`, `channel`) are used as inputs for this workflow. It also consumes the `change-log` artifact produced by `getversion`.
+
 ## Trigger
 
 This workflow is triggered by `workflow_call`.
@@ -58,7 +60,7 @@ Runs on `windows-2019`.
 16. **Setup Nuget for Public PepperDash Repo:** Sets the nuget.org API key if the repository is public and owned by 'PepperDash'.
 17. **Notify Skipping Public Nuget Setup:** Adds a note to the summary if the public NuGet push is skipped.
 18. **Publish to Nuget:** Pushes the `.nupkg` file to nuget.org if the conditions in step 16 are met.
-19. **Get release notes:** Downloads the `change-log` artifact (presumably created by a previous versioning step).
+19. **Get release notes:** Downloads the `change-log` artifact (generated and uploaded by the preceding `essentialsplugins-getversion.yml` workflow).
 20. **Upload Release:** Creates or updates a GitHub release using `ncipollo/release-action@v1`.
     -   Uses the `tag` input.
     -   Marks as pre-release if `channel` is not empty.

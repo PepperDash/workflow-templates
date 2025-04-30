@@ -2,6 +2,8 @@
 
 This reusable workflow builds Essentials Plugins targeting the Crestron 4-Series platform using MSBuild.
 
+**Dependency:** This workflow typically runs *after* the `essentialsplugins-getversion.yml` workflow. The outputs from `getversion` (`version`, `tag`, `newVersion`, `channel`) are used as inputs for this workflow. It also consumes the `change-log` artifact produced by `getversion`.
+
 ## Trigger
 
 This workflow is triggered by `workflow_call`.
@@ -36,7 +38,7 @@ Runs on `windows-latest`.
 3.  **Setup MS Build:** Sets up MSBuild using `microsoft/setup-msbuild@v1.1`.
 4.  **Restore Nuget Packages:** Restores NuGet packages for the solution file found in step 2.
 5.  **Build Solution:** Builds the solution using `msbuild`. Passes the `BUILD_TYPE` as the configuration and the `version` input as the version property. Disables embedding source revision info.
-6.  **Get release notes:** Downloads the `change-log` artifact (presumably created by a previous versioning step).
+6.  **Get release notes:** Downloads the `change-log` artifact (generated and uploaded by the preceding `essentialsplugins-getversion.yml` workflow).
 7.  **Check Package Name:**
     -   This step is skipped if `bypassPackageCheck` input is `true`.
     -   Constructs an expected NuGet package name based on the repository name (e.g., `epi-foo-bar` becomes `PepperDash.Essentials.Plugins.Foo.Bar`).

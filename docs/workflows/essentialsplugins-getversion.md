@@ -39,3 +39,23 @@ Runs on `ubuntu-latest`.
     -   Uses the generated `CHANGELOG.md` as the release body.
     -   `allowUpdates: true` permits updating an existing release for the same tag.
 10. **Print results:** If a new version *was* generated, adds a summary of the outputs (`version`, `tag`, `newVersion`, `channel`, `type`) to the GitHub step summary.
+
+## Example Summaries
+
+### New Version Generated
+
+```markdown
+# Summary
+Version: 1.2.3
+Tag: v1.2.3
+New Version: true
+Channel:
+Type: patch
+```
+
+### No New Version Generated
+
+```markdown
+# Summary
+No new version generated
+```
