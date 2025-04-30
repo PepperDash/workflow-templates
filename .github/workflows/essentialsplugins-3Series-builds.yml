@@ -143,7 +143,7 @@ jobs:
           } | Copy-Item -Destination ($destination) -Force
           # Write-Host "Getting matching files..."
           # # Get any files from the output folder that match the following extensions
-          Get-ChildItem -Path $destination | Where-Object {($_.Extension -eq ".clz") -or ($_.Extension -eq ".cpz" -or ($_.Extension -eq ".cplz"))} | ForEach-Object { 
+          Get-ChildItem -Path $destination | Where-Object {($_.Extension -eq ".clz") -or ($_.Extension -eq ".cpz") -or ($_.Extension -eq ".cplz")} | ForEach-Object { 
             # Rename the Crestron files to include the version number            
             Rename-Item -NewName { "$($_.BaseName)-$($Env:VERSION)$($_.Extension)" }
             # Write the output to the summary
