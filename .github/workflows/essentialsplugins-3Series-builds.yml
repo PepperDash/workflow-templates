@@ -112,7 +112,7 @@ jobs:
       - name: Build Solution
         shell: powershell
         run: |
-          Write-Output "Building solution`n-Solution File: $($Env:SOLUTION_FILE)`n-Solution Path: $($Env:SOLUTION_PATH)`n-Build Type: $($ENV:BUILD_TYPE)`n-Version: $($ENV:VERSION)"
+          Write-Output "Preparing to build solution`n- Solution File: $($Env:SOLUTION_FILE)`n- Solution Path: $($Env:SOLUTION_PATH)`n- Build Type: $($ENV:BUILD_TYPE)`n-Version: $($ENV:VERSION)`n- Workspace: $($Env:GITHUB_WORKSPACE)"
           Invoke-Expression "docker run --rm --mount type=bind,source=""$($Env:GITHUB_WORKSPACE)"",target=""c:\project"" pepperdash/sspbuilder c:\cihelpers\vsidebuild.exe -Solution ""c:\project\$($Env:SOLUTION_PATH)"" -BuildSolutionConfiguration $($ENV:BUILD_TYPE)"
       
       # Copy the build output files to the output directory      
@@ -126,10 +126,16 @@ jobs:
 
           # Define the target file extensions (with leading dot)
           $targetExtensions = @(".cpz", ".clz", ".cplz", ".dll")
+          $targetFileName = $Env:SOLUTION_FILE
+          $targetFileName = $targetFileName -replace "\.3Series", ""
 
+          Write-Output "Target File Name: $targetFileName"
+          Write-Output "Target File Extensions: $($targetExtensions -join ', ')"
+          Write-Output "Include Patterns: $($includePatterns -join ', ')"
+          
           # Create the include patterns for Get-ChildItem -Include
-          $includePatterns = $targetExtensions | ForEach-Object { "*$_" }
-
+          $includePatterns = $targetExtensions | ForEach-Object { "$targetFileName$_" }
+          
           Write-Output "Source Directory: $sourceDir"
           Write-Output "Destination Directory: $destinationDir"
           Write-Output "Version: $version"
