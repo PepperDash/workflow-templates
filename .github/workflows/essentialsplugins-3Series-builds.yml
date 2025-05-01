@@ -100,16 +100,16 @@ jobs:
           $searchPath = "*.3Series.sln"
 
           $solution_file = Get-ChildItem -Path $workspace -Filter $searchPath -Recurse
-          $solution_path = $solution_file.DirectoryName
+          $solution_path = $solution_file.Name
 
           Write-Output "Solution File BaseName: $($solution_file.BaseName)"
           Write-Output "Solution Path: $($solution_path)"
 
-          $solution_path = $solution_path -Replace "(?:[^\\]*\\){4}", ""
-          Write-Output "Solution Path: $($solution_path)"
+          # $solution_path = $solution_path -Replace "(?:[^\\]*\\){4}", ""
+          # Write-Output "Solution Path: $($solution_path)"
 
           Write-Output "SOLUTION_FILE=$($solution_file.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Output "SOLUTION_PATH=$($solution_path.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
+          Write-Output "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
                   
 
       # Build the solution using the docker image
