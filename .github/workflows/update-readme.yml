@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: PepperDash/workflow-templates
-          ref: development
+          ref: main
           path: workflow-templates
 
       - name: Set up Python
