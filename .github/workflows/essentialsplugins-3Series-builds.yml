@@ -35,12 +35,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # Fetch all tags
+      
+          # Fetch all tags
       - name: Fetch tags
         run: git fetch --tags
-      # Update AssemblyInfo
+      
+        # Update AssemblyInfo
       - name: Update AssemblyInfo.cs
-        shell: powershell
+        shell: pwsh
         run: |
           function Update-SourceVersion {
           Param ([string]$Version)
@@ -79,6 +81,7 @@ jobs:
               Write-Output " ";
               Write-Output "Unable to apply version to AssemblyInfo.cs files";
           }
+      
       - name: restore Nuget Packages
         run: nuget install .\packages.config -OutputDirectory .\packages -ExcludeVersion
       
@@ -89,39 +92,37 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
         
-      # Build the solutions in the docker image
-      - name: Get SLN Path 
-        shell: powershell
+      # Get the SLN Path & file
+      - name: Get SLN Path & SLN File
+        shell: pwsh
         run: |
           $solution_path = Get-ChildItem *.3Series.sln -recurse 
           $solution_path = $solution_path.FullName
           $solution_path = $solution_path -replace "(?:[^\\]*\\){4}", ""
-          Write-Output $solution_path
-          echo "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        
-        # Set the SOLUTION_FILE
-      - name: Get SLN File 
-        shell: powershell
-        run: |
+          Write-Output "Solution Path: $solution_path"
+          Write-Output "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append          
+
           $solution_file = Get-ChildItem .\*.3Series.sln -recurse -Path "$($Env:GITHUB_WORKSPACE)" 
-          echo "SOLUTION_FILE=$($solution_file.BaseName)"| Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        
+          Write-Output "Solution File: $($solution_path.BaseName)"
+          Write-Output "SOLUTION_FILE=$($solution_file.BaseName)"| Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # Build the solution using the docker image
       - name: Build Solution
-        shell: powershell
+        shell: pwsh
         run: |
           Invoke-Expression "docker run --rm --mount type=bind,source=""$($Env:GITHUB_WORKSPACE)"",target=""c:/project"" pepperdash/sspbuilder c:\cihelpers\vsidebuild.exe -Solution ""c:\project\$($Env:SOLUTION_PATH)"" -BuildSolutionConfiguration $($ENV:BUILD_TYPE)"
       
-      # Zip up the output files as needed
-      - name: Zip Build Output
-        shell: powershell
+      # Copy the build output files to the output directory      
+      - name: Copy build output files
+        shell: pwsh
         run: |
           # GitHub Actions environment variables
-          $sourceDir = "$Env:GITHUB_WORKSPACE/src" 
-          $destinationDir = "$Env:GITHUB_WORKSPACE/output"
+          $sourceDir = "$Env:GITHUB_WORKSPACE\src" 
+          $destinationDir = "$Env:GITHUB_WORKSPACE\output"
           $version = $Env:VERSION
 
           # Define the target file extensions (with leading dot)
-          $targetExtensions = @(".cpz", ".clz", ".cplz")
+          $targetExtensions = @(".cpz", ".clz", ".cplz", ".dll")
 
           # Create the include patterns for Get-ChildItem -Include
           $includePatterns = $targetExtensions | ForEach-Object { "*$_" }
@@ -165,32 +166,35 @@ jobs:
           Write-Output "Contents of destination directory ($destinationDir):"
           Get-ChildItem -Path $destinationDir
 
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Zip Build Output Files`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Copy build output files`n"
           Get-ChildItem -Path $destinationDir | ForEach-Object {
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($_.Name)`n"
           }
         
-      - name: Remove Existing Nuspec Files
-        run: |
-          Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
-        
+      # Remove any existing nuspec files and create a new one
       - name: Create Nuspec File
-        shell: powershell
+        shell: pwsh
         run: |
+          # Remove any existing nuspec files
+          Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
+
+          # Create a new nuspec file
           $year = (Get-Date).Year
           $repoFullName = "${{ github.repository }}" # Full repository name, including owner
-          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part
+          $repoName = $repoFullName.Split('/')[-1] # Extracting the repository name part from a URL style path
           $makeModelParts = $repoName -split '-'
           $makeModel = $makeModelParts[1..($makeModelParts.Length - 1)] -join ' ' # Joining all parts after the first dash
           $title = (Get-Culture).TextInfo.ToTitleCase($makeModel)
           $makeModel = $title -replace ' ', '' # Removing spaces for the ID
           $id = "PepperDash.Essentials.Plugin." + $makeModel
-          echo "Repo: $repoFullName" >> GITH_STEP_SUMMARY
-          echo "Repo Name: $repoName" >> GITH_STEP_SUMMARY
-          echo "Make/Model: $makeModel" >> GITH_STEP_SUMMARY
-          echo "Title: $title" >> GITH_STEP_SUMMARY
-          echo "ID: $id" >> GITH_STEP_SUMMARY
-          echo "Owner: ${{ github.repository_owner }}" >> GITH_STEP_SUMMARY
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Create Nuspec File`n"
+          Write-Output "Repo: $repoFullName" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Repo Name: $repoName" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Make/Model: $makeModel" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Title: $title" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "ID: $id" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Owner: ${{ github.repository_owner }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Output Directory: ${{ github.workspace }}\output" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>
@@ -211,17 +215,15 @@ jobs:
             <files>
               <file src='LICENSE.md' target=''/>
               <file src='README.md' target=''/>
-              <file src='./output/**' target='lib\net35'/>
+              <file src='.\output\**' target='lib\net35'/>
             </files>
           </package>
           "@
-          echo $nuspecContent > ${{ github.workspace }}\project.nuspec
-      
-      - name: Get nuget File 
-        shell: powershell
-        run: |
+          # Write the nuspec content to a file
+          Write-Output $nuspecContent > ${{ github.workspace }}\project.nuspec
           $nuspec_file = (Get-ChildItem *.nuspec -recurse).BaseName
-          echo "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "Nuspec File: $nuspec_file"
+          Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       
       # Pulls the nuget builder packages
       - name: Add nuget.exe
@@ -230,16 +232,18 @@ jobs:
       
         # Creating nuget Packages
       - name: Create nuget package
+        shell: pwsh
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
         run: |
-          if (-not (Test-Path -Path "./project.nuspec")) {
+          if (-not (Test-Path -Path ".\project.nuspec")) {
             Write-Error "NuGet nuspec file not foundCheck if the build process created the package correctly."
             exit 1
           } 
-          nuget pack "./project.nuspec" -version ${{ env.VERSION }} -OutputDirectory ./output
+          nuget pack ".\project.nuspec" -version ${{ env.VERSION }} -OutputDirectory .\output
       
       # Pushes to internal github registry
       - name: Setup and Publish to GitHub feed
+        shell: pwsh
         run: |
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
             Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
@@ -249,19 +253,20 @@ jobs:
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
           nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
-          echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
+          Write-Output "GitHub Event: ${{ github.event }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Publish to Nuget.org (public repos only) 
+        shell: pwsh
         if: github.repository_owner == 'PepperDash' && github.repository.visibility == 'public'
         run: |
-          echo "Publishing ${{ github.repository }} to NuGet.org" >> $GITHUB_STEP_SUMMARY          
+          Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
           nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
 
       - name: Skipping publish to Nuget.org (non public repos)        
         if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
-        run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
+        run: Write-Output "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
     
       # Create the release on the source repo
       - name: Get release notes
@@ -278,6 +283,6 @@ jobs:
           prerelease: ${{ inputs.channel != '' }}
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
-          bodyFile: ./CHANGELOG.md
+          bodyFile: .\CHANGELOG.md
 
     
