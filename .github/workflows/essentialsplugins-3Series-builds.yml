@@ -96,15 +96,18 @@ jobs:
       - name: Get SLN Path & SLN File
         shell: pwsh
         run: |
-          $solution_path = Get-ChildItem *.3Series.sln -recurse 
+          $workspace = $Env:GITHUB_WORKSPACE
+          $searchPath = "*.3Series.sln"
+          
+          $solution_file = Get-ChildItem -Path $workspace -Filter $searchPath -Recurse
+          Write-Output "Solution File: $($solution_file.BaseName)"
+          Write-Output "SOLUTION_FILE=$($solution_file.BaseName)"| Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          
+          $solution_path = Get-ChildItem -Path $workspace -Filter $searchPath -Recurse
           $solution_path = $solution_path.FullName
           $solution_path = $solution_path -replace "(?:[^\\]*\\){4}", ""
-          Write-Output "Solution Path: $solution_path"
-          Write-Output "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append          
-
-          $solution_file = Get-ChildItem .\*.3Series.sln -recurse -Path "$($Env:GITHUB_WORKSPACE)" 
-          Write-Output "Solution File: $($solution_path.BaseName)"
-          Write-Output "SOLUTION_FILE=$($solution_file.BaseName)"| Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "Solution Path: $($solution_path.FullName)"
+          Write-Output "SOLUTION_PATH=$($solution_path.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       # Build the solution using the docker image
       - name: Build Solution
