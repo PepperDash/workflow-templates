@@ -100,22 +100,18 @@ jobs:
           $searchPath = "*.3Series.sln"
 
           $solution_file = Get-ChildItem -Path $workspace -Filter $searchPath -Recurse
-          $solution_path = $solution_file.Name
-
-          Write-Output "Solution File BaseName: $($solution_file.BaseName)"
-          Write-Output "Solution Path: $($solution_path)"
-
-          # $solution_path = $solution_path -Replace "(?:[^\\]*\\){4}", ""
-          # Write-Output "Solution Path: $($solution_path)"
+          
+          Write-Output "Solution File: $($solution_file.BaseName)"
+          Write-Output "Solution Path: $($solution_file.Name)"
 
           Write-Output "SOLUTION_FILE=$($solution_file.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Output "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
+          Write-Output "SOLUTION_PATH=$($solution_file.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
                   
 
       # Build the solution using the docker image
       - name: Build Solution
         run: |
-          Invoke-Expression "docker run --rm --mount type=bind,source=""$($Env:GITHUB_WORKSPACE)"",target=""c:\project"" pepperdash/sspbuilder c:\cihelpers\vsidebuild.exe -Solution ""c:\project\$($Env:SOLUTION_PATH)"" -BuildSolutionConfiguration $($ENV:BUILD_TYPE)"
+          Invoke-Expression "docker run --rm --mount type=bind,source=""$($Env:GITHUB_WORKSPACE)"",target=""c:/project"" pepperdash/sspbuilder c:\cihelpers\vsidebuild.exe -Solution ""c:\project\$($Env:SOLUTION_PATH)"" -BuildSolutionConfiguration $($ENV:BUILD_TYPE)"
       
       # Copy the build output files to the output directory      
       - name: Copy build output files
