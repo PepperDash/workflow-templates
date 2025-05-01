@@ -104,15 +104,13 @@ jobs:
           echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Publish to Nuget.org (public repos only) 
-        # if: github.repository_owner == 'PepperDash' && (github.repository.private == false || github.repository.internal == false)
         if: github.repository_owner == 'PepperDash' && github.repository.visibility == 'public'
         run: |      
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
           nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
       
       - name: Skipping publish to Nuget.org (non public repos)
-        # if: github.repository_owner != 'PepperDash' || (github.repository.private == true || github.repository.internal == true)
-        if: github.repository_owner != 'PepperDash' && github.repository.visibility != 'public'
+        if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
         run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
   
       # Create the release on the source repo  
