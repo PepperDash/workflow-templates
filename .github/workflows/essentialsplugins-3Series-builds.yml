@@ -82,6 +82,7 @@ jobs:
               Write-Output "Unable to apply version to AssemblyInfo.cs files";
           }
       
+      # Restore Nuget Packages
       - name: restore Nuget Packages
         run: nuget install .\packages.config -OutputDirectory .\packages -ExcludeVersion
       
@@ -297,7 +298,9 @@ jobs:
           }
           nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Feed`n"
-          Write-Output "GitHub Event: ${{ github.event }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "GitHub Event: ${{ github.event.repository.private }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "GitHub Repository: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "GitHub Repository Visibility: ${{ github.repository.visibility }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Publish to Nuget.org (public repos only) 
@@ -309,6 +312,7 @@ jobs:
           nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
           nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
 
+      # Skips the publish to nuget.org if the repo is not public or not owned by PepperDash
       - name: Skipping publish to Nuget.org (non public repos)        
         if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
         run: |
@@ -321,6 +325,7 @@ jobs:
         with:
           name: change-log
       
+      # Upload the release to the source repo
       - name: Upload Release
         id: create_release
         uses: ncipollo/release-action@v1
