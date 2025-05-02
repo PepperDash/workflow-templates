@@ -107,37 +107,37 @@ jobs:
           Write-Output "SOLUTION_FILE=$($solution_file.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "SOLUTION_PATH=$($solution_file.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
 
-          Write-Output "Searching for .csproj references in $($solution_file.Name)..."
-          $csprojPaths = @()
-          # Regex to find Project lines and capture the relative csproj path
-          $projectRegex = 'Project\("{[A-F0-9-]+}"\) = "[^"]+", "([^"]+\.csproj)", "{[A-F0-9-]+}"'
+          # Write-Output "Searching for .csproj references in $($solution_file.Name)..."
+          # $csprojPaths = @()
+          # # Regex to find Project lines and capture the relative csproj path
+          # $projectRegex = 'Project\("{[A-F0-9-]+}"\) = "[^"]+", "([^"]+\.csproj)", "{[A-F0-9-]+}"'
 
-          Get-Content -Path $solution_file.FullName | ForEach-Object {
-              if ($_ -match $projectRegex) {
-                  $relativeCsprojPath = $Matches[1]
-                  # Construct the full path relative to the SLN directory
-                  $fullCsprojPath = Join-Path -Path $solution_file.DirectoryName -ChildPath $relativeCsprojPath
-                  $csprojPaths += $fullCsprojPath
-                  Write-Output "  Found CSPROJ reference: $relativeCsprojPath"
-                  Write-Output "  Full CSPROJ Path: $fullCsprojPath"
-              }
-          }
+          # Get-Content -Path $solution_file.FullName | ForEach-Object {
+          #     if ($_ -match $projectRegex) {
+          #         $relativeCsprojPath = $Matches[1]
+          #         # Construct the full path relative to the SLN directory
+          #         $fullCsprojPath = Join-Path -Path $solution_file.DirectoryName -ChildPath $relativeCsprojPath
+          #         $csprojPaths += $fullCsprojPath
+          #         Write-Output "  Found CSPROJ reference: $relativeCsprojPath"
+          #         Write-Output "  Full CSPROJ Path: $fullCsprojPath"
+          #     }
+          # }
 
-          if ($csprojPaths.Count -eq 0) {
-              Write-Warning "No .csproj references found in $($solution_file.Name)."
-          } elseif ($csprojPaths.Count -gt 1) {
-              Write-Warning "Multiple .csproj references found. You might need to adjust logic depending on which one is needed."
-              # Example: Set an environment variable with the first one found
-              # $firstCsproj = $csprojPaths[0]
-              # Write-Output "CSPROJ_FILE=$firstCsproj" # | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } else {
-              # Exactly one found
-              $csprojFile = $csprojPaths[0]
-              $csprojFileName = Split-Path -Path $csprojFile -Leaf
-              $csprojFileName = $csprojFileName -Replace ".csproj", "" -Replace ".3Series", ""
-              Write-Output "CSPROJ_FILE=$csprojFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-              Write-Output "CSPROJ_FILE_NAME=$csprojFileName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
+          # if ($csprojPaths.Count -eq 0) {
+          #     Write-Warning "No .csproj references found in $($solution_file.Name)."
+          # } elseif ($csprojPaths.Count -gt 1) {
+          #     Write-Warning "Multiple .csproj references found. You might need to adjust logic depending on which one is needed."
+          #     # Example: Set an environment variable with the first one found
+          #     # $firstCsproj = $csprojPaths[0]
+          #     # Write-Output "CSPROJ_FILE=$firstCsproj" # | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # } else {
+          #     # Exactly one found
+          #     $csprojFile = $csprojPaths[0]
+          #     $csprojFileName = Split-Path -Path $csprojFile -Leaf
+          #     $csprojFileName = $csprojFileName -Replace ".csproj", "" -Replace ".3Series", ""
+          #     Write-Output "CSPROJ_FILE=$csprojFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          #     Write-Output "CSPROJ_FILE_NAME=$csprojFileName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # }
                   
 
       # Build the solution using the docker image
@@ -154,14 +154,15 @@ jobs:
           # GitHub Actions environment variables
           $sourceDir = "$Env:GITHUB_WORKSPACE\src" 
           $destinationDir = "$Env:GITHUB_WORKSPACE\output"
-          $assemblyName = $Env:CSPROJ_FILE_NAME
+          #$assemblyName = $Env:CSPROJ_FILE_NAME
           $assemblyVersion = $Env:VERSION
 
           # Define the target file extensions (with leading dot)
           $validExtensions = @(".cpz", ".clz", ".cplz", ".dll")
 
           # Create the include patterns for Get-ChildItem -Include
-          $includePatterns = $validExtensions | ForEach-Object { "$assemblyName*$_" }
+          #$includePatterns = $validExtensions | ForEach-Object { "$assemblyName*$_" }
+          $includePatterns = $validExtensions | ForEach-Object { "*$_" }
 
           Write-Output "Target File Extensions: $($validExtensions -join ', ')"
           Write-Output "Include Patterns: $($includePatterns -join ', ')"
