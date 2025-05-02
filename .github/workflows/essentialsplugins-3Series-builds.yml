@@ -129,10 +129,11 @@ jobs:
               $model = $makeModelParts[1].Replace(' ', '')
           }
 
-          # TODO [ ] review for standardization - 4series uses `$make.$model`
-          #$title = (Get-Culture).TextInfo.ToTitleCase("$make.$model")
           # TODO [ ] review for standardization - original title implementation
           $title = (Get-Culture).TextInfo.ToTitleCase("$make") + (Get-Culture).TextInfo.ToTitleCase("$model")
+          # TODO [ ] review for standardization - 4series uses `$make.$model`
+          #$title = (Get-Culture).TextInfo.ToTitleCase("$make.$model")
+
           # TODO [ ] review for standardization - 4series build uses `Plugins`
           $package = "PepperDash.Essentials.Plugin." + ($title -replace ' ', '')
 
