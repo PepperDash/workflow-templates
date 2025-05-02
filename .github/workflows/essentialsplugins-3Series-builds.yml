@@ -228,7 +228,7 @@ jobs:
               $oldName = $_.Name
               $baseName = $_.BaseName
               $extension = $_.Extension # Includes the dot (.)
-              $newName = "$baseName.$assemblyVersion$extension" -Replace '.3Series', ''
+              $newName = "$baseName.$version$extension" -Replace '.3Series', ''
               
               Write-Output "Renaming '$oldName' to '$newName'"    
               Rename-Item -Path $_.FullName -NewName $newName -Force 
