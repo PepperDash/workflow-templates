@@ -255,7 +255,6 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Create Nuspec File`n"
           Write-Output "Repo: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Repo Name: $env:REPO_NAME" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Make/Model: $env:EPI_MAKE_MODEL" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Title: $env:EPI_TITLE" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Package: $env:EPI_PACKAGE" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Owner: ${{ github.repository_owner }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
