@@ -168,8 +168,7 @@ jobs:
           # GitHub Actions environment variables
           $sourceDir = "$Env:GITHUB_WORKSPACE\src" 
           $destinationDir = "$Env:GITHUB_WORKSPACE\output"
-          $assemblyName = $Env:ASSEMBLY_NAME
-          $assemblyVersion = $Env:VERSION
+          $version = $Env:VERSION
 
           # Define the target file extensions (with leading dot)
           $validExtensions = @(".cpz", ".clz", ".cplz")
@@ -181,7 +180,7 @@ jobs:
           Write-Output "Include Patterns: $($includePatterns -join ', ')"
           Write-Output "Source Directory: $sourceDir"
           Write-Output "Destination Directory: $destinationDir"
-          Write-Output "Assembly Version: $assemblyVersion"
+          Write-Output "Version: $version"
 
           # Create the destination directory if it doesn't exist.
           New-Item -ItemType Directory -Force -Path $destinationDir
@@ -224,14 +223,14 @@ jobs:
           Write-Output "Contents of destination directory ($destinationDir):"
           Get-ChildItem -Path $destinationDir
 
-          Write-Output "Renaming files in $destinationDir to include assembly version '$assemblyVersion'..."
+          Write-Output "Renaming files in $destinationDir to include version '$version'..."
 
           # Rename the copied files in the destination directory
           Get-ChildItem -Path $destinationDir | ForEach-Object {
               $oldName = $_.Name
               $baseName = $_.BaseName
               $extension = $_.Extension # Includes the dot (.)
-              $newName = "$baseName.$assemblyVersion$extension" # Just the new filename
+              $newName = "$baseName.$version$extension" # Just the new filename
               
               Write-Output "Renaming '$oldName' to '$newName'"    
               Rename-Item -Path $_.FullName -NewName $newName -Force 
