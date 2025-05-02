@@ -131,8 +131,12 @@ jobs:
           }
 
           $makeModel = if ($make -and $model) { "$make $model" } else { "" }
-          $title = (Get-Culture).TextInfo.ToTitleCase("$make.$model")
+          # 4series uses `$make.$model`
+          #$title = (Get-Culture).TextInfo.ToTitleCase("$make.$model")
+          # original title implementation
+          $title = (Get-Culture).TextInfo.ToTitleCase("$makeModel")
           $name = $title -replace ' ', ''
+          # 4series build uses `Plugins`
           $id = "PepperDash.Essentials.Plugin." + $title
 
           Write-Output "Repo Full Name: $repoFullName"
