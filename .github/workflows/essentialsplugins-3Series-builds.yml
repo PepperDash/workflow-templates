@@ -99,13 +99,45 @@ jobs:
           $workspace = $Env:GITHUB_WORKSPACE
           $searchPath = "*.3Series.sln"
 
-          $solution_file = Get-ChildItem -Path $workspace -Filter $searchPath -Recurse
-          
+          $solution_file = Get-ChildItem -Path $workspace -Filter $slnSearchPattern -Recurse
+
           Write-Output "Solution File: $($solution_file.BaseName)"
           Write-Output "Solution Path: $($solution_file.Name)"
 
           Write-Output "SOLUTION_FILE=$($solution_file.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "SOLUTION_PATH=$($solution_file.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
+
+          Write-Output "Searching for .csproj references in $($solution_file.Name)..."
+          $csprojPaths = @()
+          # Regex to find Project lines and capture the relative csproj path
+          $projectRegex = 'Project\("{[A-F0-9-]+}"\) = "[^"]+", "([^"]+\.csproj)", "{[A-F0-9-]+}"'
+
+          Get-Content -Path $solution_file.FullName | ForEach-Object {
+              if ($_ -match $projectRegex) {
+                  $relativeCsprojPath = $Matches[1]
+                  # Construct the full path relative to the SLN directory
+                  $fullCsprojPath = Join-Path -Path $solution_file.DirectoryName -ChildPath $relativeCsprojPath
+                  $csprojPaths += $fullCsprojPath
+                  Write-Output "  Found CSPROJ reference: $relativeCsprojPath"
+                  Write-Output "  Full CSPROJ Path: $fullCsprojPath"
+              }
+          }
+
+          if ($csprojPaths.Count -eq 0) {
+              Write-Warning "No .csproj references found in $($solution_file.Name)."
+          } elseif ($csprojPaths.Count -gt 1) {
+              Write-Warning "Multiple .csproj references found. You might need to adjust logic depending on which one is needed."
+              # Example: Set an environment variable with the first one found
+              # $firstCsproj = $csprojPaths[0]
+              # Write-Output "CSPROJ_FILE=$firstCsproj" # | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+              # Exactly one found
+              $csprojFile = $csprojPaths[0]
+              $csprojFileName = Split-Path -Path $csprojFile -Leaf
+              $csprojFileName = $csprojFileName -Replace ".csproj", "" -Replace ".3Series", ""
+              Write-Output "CSPROJ_FILE=$csprojFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              Write-Output "CSPROJ_FILE_NAME=$csprojFileName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
                   
 
       # Build the solution using the docker image
@@ -122,32 +154,32 @@ jobs:
           # GitHub Actions environment variables
           $sourceDir = "$Env:GITHUB_WORKSPACE\src" 
           $destinationDir = "$Env:GITHUB_WORKSPACE\output"
-          $version = $Env:VERSION
+          $assemblyName = $Env:CSPROJ_FILE_NAME
+          $assemblyVersion = $Env:VERSION
 
           # Define the target file extensions (with leading dot)
-          $targetExtensions = @(".cpz", ".clz", ".cplz", ".dll")
-          $targetFileName = $Env:SOLUTION_FILE
-          $targetFileName = $targetFileName -replace "\.3Series", ""
+          $validExtensions = @(".cpz", ".clz", ".cplz", ".dll")
 
-          Write-Output "Target File Name: $targetFileName"
-          Write-Output "Target File Extensions: $($targetExtensions -join ', ')"
-          Write-Output "Include Patterns: $($includePatterns -join ', ')"
-          
           # Create the include patterns for Get-ChildItem -Include
-          $includePatterns = $targetExtensions | ForEach-Object { "$targetFileName$_" }
-          
+          $includePatterns = $validExtensions | ForEach-Object { "$assemblyName*$_" }
+
+          Write-Output "Target File Extensions: $($validExtensions -join ', ')"
+          Write-Output "Include Patterns: $($includePatterns -join ', ')"
           Write-Output "Source Directory: $sourceDir"
           Write-Output "Destination Directory: $destinationDir"
-          Write-Output "Version: $version"
+          Write-Output "Assembly Name: $assemblyName"
+          Write-Output "Assembly Version: $assemblyVersion"
 
           # Create the destination directory if it doesn't exist.
           New-Item -ItemType Directory -Force -Path $destinationDir
 
-          Write-Output "Searching for files with extensions $($targetExtensions -join ', ') in $sourceDir..."
+          Write-Output "Searching for files with extensions $($validExtensions -join ', ') in $sourceDir..."
 
           # Find files recursively in the source directory with the specified extensions
           # and copy them to the destination directory.
-          Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | ForEach-Object {
+          Get-ChildItem -Path $sourceDir -Recurse | Where-Object {
+              $_.Name -like "*$assemblyName*" -and $validExtensions -contains $_.Extension
+          } | ForEach-Object {
               Write-Output "Copying $($_.FullName) to $destinationDir"
               $_ | Copy-Item -Destination $destinationDir -Force
           }
@@ -156,19 +188,20 @@ jobs:
           Write-Output "Contents of destination directory ($destinationDir):"
           Get-ChildItem -Path $destinationDir
 
-          Write-Output "Renaming files in $destinationDir to include version '$version'..."
+          Write-Output "Renaming files in $destinationDir to include assembly version '$assemblyVersion'..."
 
           # Rename the copied files in the destination directory
           # Use Where-Object for more reliable filtering within the specific directory
-          Get-ChildItem -Path $destinationDir | Where-Object { $targetExtensions -contains $_.Extension } | ForEach-Object {
+          Get-ChildItem -Path $destinationDir | Where-Object { $validExtensions -contains $_.Extension } | ForEach-Object {
               $oldName = $_.Name
               $baseName = $_.BaseName
               $extension = $_.Extension # Includes the dot (.)
-              $newName = "$baseName.$version$extension"
-              $newFullName = Join-Path -Path $destinationDir -ChildPath $newName
+              $newName = "$baseName.$assemblyVersion$extension" # Just the new filename
+              # $newFullName = Join-Path -Path $destinationDir -ChildPath $newName # This line is not needed for Rename-Item
               
               Write-Output "Renaming '$oldName' to '$newName'"
-              Rename-Item -Path $_.FullName -NewName $newFullName -Force
+              # Use $newName (just the filename) for the -NewName parameter
+              Rename-Item -Path $_.FullName -NewName $newName -Force 
           }
 
           Write-Output "File renaming process completed."
