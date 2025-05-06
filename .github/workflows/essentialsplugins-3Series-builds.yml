@@ -36,11 +36,11 @@ jobs:
         with:
           fetch-depth: 0
       
-          # Fetch all tags
+      # Fetch all tags
       - name: Fetch tags
         run: git fetch --tags
       
-        # Update AssemblyInfo
+      # Update AssemblyInfo
       - name: Update AssemblyInfo.cs
         shell: pwsh
         run: |
@@ -73,17 +73,16 @@ jobs:
               }
           }
 
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Update Assembly Info`n"
           # validate arguments
           $r = [System.Text.RegularExpressions.Regex]::Match($Env:VERSION, "\d+\.\d+\.\d+.*")          
           if ($r.Success) {
-              Write-Output "Updating Assembly Version to $Env:VERSION ..."
+              Write-Output "Updating Assembly Version to $Env:VERSION" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
               Update-AllAssemblyInfoFiles $Env:VERSION
           }
           else {
-              Write-Output " "
-              Write-Output "Error: Input version $Env:VERSION does not match x.y.z format!"
-              Write-Output " "
-              Write-Output "Unable to apply version to AssemblyInfo.cs files"
+              Write-Output "Error: Input version $Env:VERSION does not match x.y.z format!" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+              Write-Output "Unable to apply version to AssemblyInfo.cs files" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           }
       
       # Restore Nuget Packages
