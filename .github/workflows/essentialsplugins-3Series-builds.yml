@@ -339,7 +339,7 @@ jobs:
           $visibility = ${{ github.event.repository.visibility }}.ToLower()
 
           Write-Output "Repository Owner: $owner"
-          Write-Output "Event Repository Visibility: $visibility"
+          Write-Output "Repository Visibility: $visibility"
 
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"          
 
