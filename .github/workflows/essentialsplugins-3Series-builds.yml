@@ -164,14 +164,9 @@ jobs:
         shell: pwsh
         run: |
           # GitHub Actions environment variables
-          $sourceDir = "$Env:GITHUB_WORKSPACE\src" 
+          $sourceDir = "$Env:GITHUB_WORKSPACE\src\bin\$($Env:BUILD_TYPE)" 
           $destinationDir = "$Env:GITHUB_WORKSPACE\output"
           $version = $Env:VERSION
-
-          Write-Output "Source Directory Contents:"
-          Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Output $_.FullName }
-          Write-Output "Destination Directory Contents:"
-          Get-ChildItem -Path $destinationDir | ForEach-Object { Write-Output $_.FullName }
 
           # Define the target file extensions (with leading dot)
           $validExtensions = @(".cpz", ".clz", ".cplz")
@@ -189,6 +184,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path $destinationDir
 
           Write-Output "Searching for files with extensions $($validExtensions -join ', ') in $sourceDir..."
+
+          Write-Output "Source Directory Contents:"
+          Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Output $_.FullName }
 
           # Find files recursively in the source directory with the specified extensions
           $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns
@@ -232,8 +230,8 @@ jobs:
           }
 
           Write-Output "File copy process completed."
-          Write-Output "Contents of destination directory ($destinationDir):"
-          Get-ChildItem -Path $destinationDir
+          Write-Output "Destination Directory Contents:"
+          Get-ChildItem -Path $destinationDir | ForEach-Object { Write-Output $_.FullName }
 
           Write-Output "Renaming files in $destinationDir to include version '$version'..."
 
