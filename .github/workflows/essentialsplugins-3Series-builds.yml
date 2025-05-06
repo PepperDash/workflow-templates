@@ -164,7 +164,8 @@ jobs:
         shell: pwsh
         run: |
           # GitHub Actions environment variables
-          $sourceDir = "$Env:GITHUB_WORKSPACE\src\bin\$($Env:BUILD_TYPE)" 
+          # $sourceDir = "$Env:GITHUB_WORKSPACE\src\bin\$($Env:BUILD_TYPE)"
+          $sourceDir = "$Env:GITHUB_WORKSPACE" 
           $destinationDir = "$Env:GITHUB_WORKSPACE\output"
           $version = $Env:VERSION
 
@@ -183,17 +184,13 @@ jobs:
           # Create the destination directory if it doesn't exist.
           New-Item -ItemType Directory -Force -Path $destinationDir
 
-          Write-Output "Searching for files with extensions $($validExtensions -join ', ') in $sourceDir..."
-
+          Write-Output "`n"
           Write-Output "Source Directory Contents:"
           Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Output $_.FullName }
 
           # Find files recursively in the source directory with the specified extensions
-          $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns
+          $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { -not $_.FullName.Contains("\packages\") }
 
-          Write-Output "Found $($filesToCopy.Count) files to copy."
-          Write-Output $filesToCopy | ForEach-Object { $_.FullName }
-          
           # Create a list to store all files to copy, including matching base name files
           $allFilesToCopy = @()
 
@@ -210,13 +207,11 @@ jobs:
                   $_.BaseName -eq $baseName -and $_.Extension -eq ".dll" 
               }
               
-              Write-Output "Found $($matchingFiles.Count) matching files for base name '$baseName'."
-              Write-Output $matchingFiles | ForEach-Object { $_.FullName }
-
               # Add the matching files to the list
               $allFilesToCopy += $matchingFiles
           }
 
+          Write-Output "`n"
           Write-Output "Found $($allFilesToCopy.Count) files to copy."
           Write-Output $allFilesToCopy | ForEach-Object { $_.FullName }
 
@@ -229,10 +224,12 @@ jobs:
               $_ | Copy-Item -Destination $destinationDir -Force
           }
 
+          Write-Output "`n"
           Write-Output "File copy process completed."
           Write-Output "Destination Directory Contents:"
           Get-ChildItem -Path $destinationDir | ForEach-Object { Write-Output $_.FullName }
 
+          Write-Output "`n"
           Write-Output "Renaming files in $destinationDir to include version '$version'..."
 
           # Rename the copied files in the destination directory
@@ -242,10 +239,11 @@ jobs:
               $extension = $_.Extension # Includes the dot (.)
               $newName = "$baseName.$version$extension" -Replace '.3Series', ''
               
-              Write-Output "Renaming '$oldName' to '$newName'"    
+              Write-Output "- '$oldName' to '$newName'"    
               Rename-Item -Path $_.FullName -NewName $newName -Force 
           }
 
+          Write-Output "`n"
           Write-Output "File renaming process completed."
           Write-Output "Contents of destination directory ($destinationDir):"
           Get-ChildItem -Path $destinationDir
