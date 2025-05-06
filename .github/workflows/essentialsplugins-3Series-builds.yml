@@ -343,8 +343,7 @@ jobs:
           nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
 
           
-          Write-Output "GitHub Event: ${{ github.event.repository.visibility }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "GitHub Repository: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Publishing ${{ github.repository }} to GitHub feed" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Publish to Nuget.org
