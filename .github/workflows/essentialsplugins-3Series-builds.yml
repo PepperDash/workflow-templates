@@ -168,6 +168,11 @@ jobs:
           $destinationDir = "$Env:GITHUB_WORKSPACE\output"
           $version = $Env:VERSION
 
+          Write-Output "Source Directory Contents:"
+          Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Output $_.FullName }
+          Write-Output "Destination Directory Contents:"
+          Get-ChildItem -Path $destinationDir | ForEach-Object { Write-Output $_.FullName }
+
           # Define the target file extensions (with leading dot)
           $validExtensions = @(".cpz", ".clz", ".cplz")
           
@@ -357,6 +362,10 @@ jobs:
             exit 0
           }
           else {
+            if (-not (Test-Path -Path ".\output\*.nupkg")) {
+              Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+              exit 1
+            }         
             Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
             nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
