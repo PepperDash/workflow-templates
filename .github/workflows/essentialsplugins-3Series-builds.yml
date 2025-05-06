@@ -335,15 +335,15 @@ jobs:
         shell: pwsh
         # if: github.repository_owner == 'PepperDash' && github.event.repository.visiblity == 'public'
         run: |
-          $owner = ${{ github.repository_owner }}.ToLower()
-          $visibility = ${{ github.event.repository.visibility }}.ToLower()
+          $owner = ${{ github.repository_owner }}
+          $visibility = ${{ github.event.repository.visibility }}
 
           Write-Output "Repository Owner: $owner"
           Write-Output "Repository Visibility: $visibility"
 
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"          
 
-          if ($owner -notlike '*pepperdash*' -or $visibility -ne 'public') {
+          if ($owner.ToLower() -notlike '*pepperdash*' -or $visibility.ToLower() -ne 'public') {
             Write-Output "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             exit 0
           }
