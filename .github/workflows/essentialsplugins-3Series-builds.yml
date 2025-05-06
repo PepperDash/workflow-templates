@@ -188,6 +188,9 @@ jobs:
           # Find files recursively in the source directory with the specified extensions
           $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns
 
+          Write-Output "Found $($filesToCopy.Count) files to copy."
+          Write-Output $filesToCopy | ForEach-Object { $_.FullName }
+          
           # Create a list to store all files to copy, including matching base name files
           $allFilesToCopy = @()
 
@@ -203,10 +206,16 @@ jobs:
               $matchingFiles = Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
                   $_.BaseName -eq $baseName -and $_.Extension -eq ".dll" 
               }
+              
+              Write-Output "Found $($matchingFiles.Count) matching files for base name '$baseName'."
+              Write-Output $matchingFiles | ForEach-Object { $_.FullName }
 
               # Add the matching files to the list
               $allFilesToCopy += $matchingFiles
           }
+
+          Write-Output "Found $($allFilesToCopy.Count) files to copy."
+          Write-Output $allFilesToCopy | ForEach-Object { $_.FullName }
 
           # Remove duplicates from the list
           $allFilesToCopy = $allFilesToCopy | Sort-Object FullName -Unique
@@ -254,9 +263,9 @@ jobs:
           
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Create Nuspec File`n"
           Write-Output "Repo: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Repo Name: $env:REPO_NAME" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Title: $env:EPI_TITLE" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Package: $env:EPI_PACKAGE" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Repo Name: ${{ env.REPO_NAME }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Title: ${{ env.EPI_TITLE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Package: ${{ env.EPI_PACKAGE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Owner: ${{ github.repository_owner }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Output Directory: ${{ github.workspace }}\output" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
@@ -265,16 +274,16 @@ jobs:
           <?xml version='1.0' encoding='utf-8'?>
           <package>
             <metadata>
-              <id>$env:EPI_PACKAGE</id>
+              <id>${{ env.EPI_PACKAGE }}</id>
               <version>${{ env.VERSION }}</version>
-              <title>$env:EPI_TITLE</title>
+              <title>${{ env.EPI_TITLE}}</title>
               <authors>PepperDash Technology</authors>
               <owners>PepperDash</owners>
               <requireLicenseAcceptance>false</requireLicenseAcceptance>
               <license type='file'>LICENSE.md</license>
               <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
               <copyright>Copyright $year</copyright>
-              <description>$env:REPO_NAME Epi</description>
+              <description>${{ env.REPO_NAME}}</description>
               <tags>crestron 3series</tags>
               <repository type='git' url='https://github.com/${{ github.repository }}'/>
             </metadata>
