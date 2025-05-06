@@ -164,7 +164,6 @@ jobs:
         shell: pwsh
         run: |
           # GitHub Actions environment variables
-          # $sourceDir = "$Env:GITHUB_WORKSPACE\src\bin\$($Env:BUILD_TYPE)"
           $sourceDir = "$Env:GITHUB_WORKSPACE" 
           $destinationDir = "$Env:GITHUB_WORKSPACE\output"
           $version = $Env:VERSION
@@ -189,7 +188,10 @@ jobs:
           Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Output $_.FullName }
 
           # Find files recursively in the source directory with the specified extensions
-          $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { -not $_.FullName.Contains("\packages\") }
+          # $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { -not $_.FullName.Contains("\packages\") }
+            $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { 
+              -not $_.FullName.Contains("\packages\") -and $_.FullName -match "\\bin\\$($Env:BUILD_TYPE)" 
+            }
 
           # Create a list to store all files to copy, including matching base name files
           $allFilesToCopy = @()
