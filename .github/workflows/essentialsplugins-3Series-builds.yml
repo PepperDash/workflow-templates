@@ -265,11 +265,11 @@ jobs:
           $year = (Get-Date).Year
           
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Create Nuspec File`n"
+          Write-Output "Owner: ${{ github.repository_owner }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Repo: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Repo Name: ${{ env.REPO_NAME }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Title: ${{ env.EPI_TITLE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Package: ${{ env.EPI_PACKAGE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Owner: ${{ github.repository_owner }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Output Directory: ${{ github.workspace }}\output" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
           # Create a new nuspec file
@@ -329,8 +329,12 @@ jobs:
       - name: Setup and Publish to GitHub feed
         shell: pwsh
         run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GitHub Feed`n"
+          
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
-            Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            Write-Error $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             exit 1
           }          
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
@@ -338,7 +342,7 @@ jobs:
           }
           nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
 
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Feed`n"
+          
           Write-Output "GitHub Event: ${{ github.event.repository.visibility }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "GitHub Repository: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
@@ -347,23 +351,25 @@ jobs:
         shell: pwsh
         # if: github.repository_owner == 'PepperDash' && github.event.repository.visiblity == 'public'
         run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
+          
           $owner = "${{ github.repository_owner }}"
           $visibility = "${{ github.event.repository.visibility }}"
 
           Write-Output "Repository Owner: $owner"
           Write-Output "Repository Visibility: $visibility"
 
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"          
-
           if ($owner.ToLower() -notlike '*pepperdash*' -or $visibility.ToLower() -ne 'public') {
-            Write-Output "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            Write-Error "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             exit 0
           }
           else {
             if (-not (Test-Path -Path ".\output\*.nupkg")) {
-              Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+              $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+              Write-Error $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
               exit 1
-            }         
+            }
+            
             Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
             nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
