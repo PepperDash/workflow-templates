@@ -333,7 +333,7 @@ jobs:
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Publish to Nuget.org
         shell: pwsh
-        if: github.repository_owner == 'PepperDash' && github.event.repository.visiblity == 'public'
+        # if: github.repository_owner == 'PepperDash' && github.event.repository.visiblity == 'public'
         run: |
           $owner = ${{ github.repository_owner }}.ToLower()
           $visibility = ${{ github.event.repository.visibility }}.ToLower()
@@ -343,7 +343,7 @@ jobs:
 
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"          
 
-          if($owner -ne 'pepperdash' -or $visibility -ne 'public') {
+          if ($owner -notlike '*pepperdash*' -or $visibility -ne 'public') {
             Write-Output "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             exit 0
           }
