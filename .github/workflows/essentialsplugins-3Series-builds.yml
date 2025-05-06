@@ -329,24 +329,28 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Feed`n"
           Write-Output "GitHub Event: ${{ github.event.repository.visibility }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "GitHub Repository: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "GitHub Repository Visibility: ${{ github.repository.visibility }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
-      - name: Publish to Nuget.org (public repos only) 
+      - name: Publish to Nuget.org
         shell: pwsh
         if: github.repository_owner == 'PepperDash' && github.event.repository.visiblity == 'public'
         run: |
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
-          Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
-          nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+          $owner = ${{ github.repository_owner }}.ToLower()
+          $visibility = ${{ github.event.repository.visibility }}.ToLower()
 
-      # Skips the publish to nuget.org if the repo is not public or not owned by PepperDash
-      - name: Skipping publish to Nuget.org (non public repos)        
-        if: github.repository_owner != 'PepperDash' || github.event.repository.visiblity != 'public'
-        run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
-          Write-Output "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          
+
+          if($owner -ne 'pepperdash' -or $visibility -ne 'public') {
+            Write-Output "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          else {
+            Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
+            nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+          }
+          
     
       # Create the release on the source repo
       - name: Get release notes
