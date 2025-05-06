@@ -338,8 +338,10 @@ jobs:
           $owner = ${{ github.repository_owner }}.ToLower()
           $visibility = ${{ github.event.repository.visibility }}.ToLower()
 
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
-          
+          Write-Output "Repository Owner: $owner"
+          Write-Output "Event Repository Visibility: $visibility"
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"          
 
           if($owner -ne 'pepperdash' -or $visibility -ne 'public') {
             Write-Output "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
