@@ -189,9 +189,9 @@ jobs:
 
           # Find files recursively in the source directory with the specified extensions
           # $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { -not $_.FullName.Contains("\packages\") }
-            $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { 
-              -not $_.FullName.Contains("\packages\") -and $_.FullName -match "\\bin\\$($Env:BUILD_TYPE)" 
-            }
+          $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { 
+            -not $_.FullName.Contains("\packages\") -and $_.FullName -match "\\bin\\$($Env:BUILD_TYPE)" 
+          }
 
           # Create a list to store all files to copy, including matching base name files
           $allFilesToCopy = @()
