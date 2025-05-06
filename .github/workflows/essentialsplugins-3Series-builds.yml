@@ -344,8 +344,8 @@ jobs:
         shell: pwsh
         # if: github.repository_owner == 'PepperDash' && github.event.repository.visiblity == 'public'
         run: |
-          $owner = ${{ github.repository_owner }}
-          $visibility = ${{ github.event.repository.visibility }}
+          $owner = "${{ github.repository_owner }}"
+          $visibility = "${{ github.event.repository.visibility }}"
 
           Write-Output "Repository Owner: $owner"
           Write-Output "Repository Visibility: $visibility"
