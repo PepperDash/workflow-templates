@@ -144,11 +144,13 @@ jobs:
                   }
               }
           }
-
+          
+          $repoIsPlugin = $false
           if($model -eq '') {
               # assume non-plugin repo && name override is automatically generated
               $title = $make
               $package = $title -replace ' ', ''
+              $repoIsPlugin = $false
           }
           else {
               # TODO [ ] review for standardization - original title implementation
@@ -159,10 +161,12 @@ jobs:
               
               # TODO [ ] review for standardization - 4series build uses `Plugins`
               $package = "PepperDash.Essentials.Plugin." + ($title -replace ' ', '')
+              $repoIsPlugin = $true
           }
 
           Write-Output "Repo Full Name: $repoFullName"
           Write-Output "Repo Name: $repoName"
+          Write-Output "Repo is Plugin: $repoIsPlugin"
           Write-Output "Make: $make"
           Write-Output "Model: $model"
           Write-Output "Title: $title"
@@ -170,6 +174,7 @@ jobs:
 
           Write-Output "REPO_FULL_NAME=$repoFullName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "REPO_NAME=$repoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "REPO_IS_PLUGIN=$repoIsPlugin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "EPI_TITLE=$title" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "EPI_PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
                   
@@ -292,47 +297,54 @@ jobs:
       - name: Create Nuspec File
         shell: pwsh
         run: |
-          # Remove any existing nuspec files
-          Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
-          
-          $year = (Get-Date).Year
-          
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Create Nuspec File`n"
           Write-Output "Owner: ${{ github.repository_owner }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Repo: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Repo Name: ${{ env.REPO_NAME }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Repo is Plugin: ${{ env.REPO_IS_PLUGIN }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Title: ${{ env.EPI_TITLE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Package: ${{ env.EPI_PACKAGE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           Write-Output "Output Directory: ${{ github.workspace }}\output" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
-          # Create a new nuspec file
-          $nuspecContent = @"
+          if ($env:REPO_IS_PLUGIN -eq 'true') {
+              # Remove any existing nuspec files
+              Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
+
+              $year = (Get-Date).Year
+              
+              # Create a new nuspec file
+              $nuspecContent = @"
           <?xml version='1.0' encoding='utf-8'?>
           <package>
-            <metadata>
-              <id>${{ env.EPI_PACKAGE }}</id>
-              <version>${{ env.VERSION }}</version>
-              <title>${{ env.EPI_TITLE}}</title>
-              <authors>PepperDash Technology</authors>
-              <owners>PepperDash</owners>
-              <requireLicenseAcceptance>false</requireLicenseAcceptance>
-              <license type='file'>LICENSE.md</license>
-              <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
-              <copyright>Copyright $year</copyright>
-              <description>${{ env.REPO_NAME}}</description>
-              <tags>crestron 3series</tags>
-              <repository type='git' url='https://github.com/${{ github.repository }}'/>
-            </metadata>
-            <files>
-              <file src='LICENSE.md' target=''/>
-              <file src='README.md' target=''/>
-              <file src='.\output\**' target='lib\net35'/>
-            </files>
+              <metadata>
+                  <id>${{ env.EPI_PACKAGE }}</id>
+                  <version>${{ env.VERSION }}</version>
+                  <title>${{ env.EPI_TITLE}}</title>
+                  <authors>PepperDash Technology</authors>
+                  <owners>PepperDash</owners>
+                  <requireLicenseAcceptance>false</requireLicenseAcceptance>
+                  <license type='file'>LICENSE.md</license>
+                  <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
+                  <copyright>Copyright $year</copyright>
+                  <description>${{ env.REPO_NAME}}</description>
+                  <tags>crestron 3series</tags>
+                  <repository type='git' url='https://github.com/${{ github.repository }}'/>
+              </metadata>
+              <files>
+                  <file src='LICENSE.md' target=''/>
+                  <file src='README.md' target=''/>
+                  <file src='.\output\**' target='lib\net35'/>
+              </files>
           </package>
           "@
-          
-          # Write the nuspec content to a file
-          Write-Output $nuspecContent > ${{ github.workspace }}\project.nuspec
+
+              # Write the nuspec content to a file
+              Write-Output $nuspecContent > ${{ github.workspace }}\project.nuspec    
+          }
+          else {
+              Write-Output "Repo is Plugin: $env:REPO_IS_PLUGIN" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+
           $nuspec_file = (Get-ChildItem *.nuspec -recurse).BaseName
           Write-Output "Nuspec File: $nuspec_file"
           Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
