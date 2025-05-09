@@ -210,9 +210,21 @@ jobs:
           Write-Output "Package Name: $package"
           Write-Output "Version: $version"
           Write-Output "Plugin: $plugin"
+          Write-Output "`n"
 
           # Create the destination directory if it doesn't exist.
-          New-Item -ItemType Directory -Force -Path $destinationDir
+          Write-Output "Creating destination directory if it doesn't exist..."
+          if (Test-Path -Path $destinationDir) {
+              Write-Output "Destination directory already exists. Deleting contents..."
+              Get-ChildItem -Path $destinationDir | Remove-Item -Force
+              Write-Output "`n"
+          }
+          else {
+              Write-Output "Destination directory does not exist. Creating it..."
+              New-Item -ItemType Directory -Force -Path $destinationDir
+              Write-Output "`n"
+          }
+          
 
           Write-Output "`n"
           Write-Output "Source Directory Contents:"
