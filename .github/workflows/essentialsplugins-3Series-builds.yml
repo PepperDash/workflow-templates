@@ -118,6 +118,7 @@ jobs:
           $makeModelParts = $repoName -split '-'
           if (-not $makeModelParts) {
               Write-Error "Error: \$makeModelParts is null or empty."
+              exit 1
           }
           else {
               Write-Output "Number of items in \$($makeModelParts): $($makeModelParts.Count)"
@@ -237,8 +238,8 @@ jobs:
               Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
                   $_.Extension -eq ".nuspec" 
               } | ForEach-Object {
-                  Write-Output "Copying $($_.Name) to $destinationDir"
-                  $_ | Copy-Item -Destination $destinationDir -Force
+                  Write-Output "Copying $($_.Name) to .\"
+                  $_ | Copy-Item -Destination .\ -Force
                   $nuspec_file = $_.BaseName
                   Write-Output "Nuspec File: $nuspec_file"
                   Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

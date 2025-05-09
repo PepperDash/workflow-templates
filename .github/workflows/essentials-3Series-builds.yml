@@ -188,7 +188,7 @@ jobs:
           Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
               $_.Extension -eq ".nuspec" 
           } | ForEach-Object {
-              Write-Output "Copying $($_.Name) to $destinationDir"
+              Write-Output "Copying $($_.Name) to .\"
               $_ | Copy-Item -Destination .\ -Force
               $nuspec_file = $_.BaseName
               Write-Output "Nuspec File: $nuspec_file"
@@ -201,8 +201,7 @@ jobs:
               $_.Name -match $title -or $_.Name -match $package
           } | ForEach-Object { Write-Output $_.FullName }
 
-          # Find files recursively in the source directory with the specified extensions
-          $includePatterns += @("*.dll")
+          # Find files recursively in the source directory with the specified extensions          
           $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { 
               -not $_.FullName.Contains("\packages\") -and $_.Name -match $title -or $_.Name -match $package
           }
