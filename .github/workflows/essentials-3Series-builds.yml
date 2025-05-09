@@ -116,8 +116,8 @@ jobs:
           $repoFullName = "${{ github.repository }}"
           $repoName = $repoFullName.Split('/')[1]          
           
-          $title = SolutionFile.BaseName
-          $package = SolutionFile.BaseName -replace ' ', '' -replace '_', ''
+          $title = $solutionFile.BaseName
+          $package = $solutionFile.BaseName -replace ' ', '' -replace '_', ''
 
           Write-Output "Repo Full Name: $repoFullName"
           Write-Output "Repo Name: $repoName"
