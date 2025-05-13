@@ -103,7 +103,7 @@ jobs:
           $workspace = $Env:GITHUB_WORKSPACE
           $filter = "*.3Series.sln"
 
-          $solution_file = Get-ChildItem -Path $workspace -Filter $filter -Recurse
+          $solution_file = Get-ChildItem -Path $workspace -Filter $filter -Recurse | Where-Object { $_.FullName -notmatch '\\packaages\\' }
 
           Write-Output "Solution File: $($solution_file.BaseName)"
           Write-Output "Solution Path: $($solution_file.Name)"
