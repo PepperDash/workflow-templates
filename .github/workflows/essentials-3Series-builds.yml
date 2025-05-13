@@ -114,20 +114,16 @@ jobs:
           Write-Output "SOLUTION_DIRECTORY=$($solution_file.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
 
           $repoFullName = "${{ github.repository }}"
-          $repoName = $repoFullName.Split('/')[1]          
-          
-          $title = $solutionFile.BaseName
-          $package = $solutionFile.BaseName -replace ' ', '' -replace '_', ''
+          $repoName = $repoFullName.Split('/')[-1]
 
           Write-Output "Repo Full Name: $repoFullName"
           Write-Output "Repo Name: $repoName"
-          Write-Output "Title: $title"
-          Write-Output "Package: $package"
+          Write-Output "Repo is Plugin: $repoIsPlugin"
 
           Write-Output "REPO_FULL_NAME=$repoFullName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "REPO_NAME=$repoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Output "EPI_TITLE=$title" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Output "EPI_PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "REPO_IS_PLUGIN=$repoIsPlugin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
                   
 
       # Build the solution using the docker image
