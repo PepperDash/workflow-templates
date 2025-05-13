@@ -114,7 +114,7 @@ jobs:
           Write-Output "SOLUTION_DIR=$($solution_file.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           # WIP - Move file naming to this section
-          # $repoFullName = "${{ github.repository }}"
+          $repoFullName = "${{ github.repository }}"
           $repoName = $repoFullName.Split('/')[-1]
 
           Write-Output "Repo Full Name: $repoFullName"
