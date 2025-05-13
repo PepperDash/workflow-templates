@@ -193,7 +193,7 @@ jobs:
               $_.Extension -eq ".nuspec" 
           } | ForEach-Object {
               Write-Output "Copying $($_.Name) to $destinationDir"
-              $_ | Copy-Item -Destination $destinationDir -Force
+              $_ | Copy-Item -Destination .\ -Force
               $nuspec_file = $_.BaseName
               Write-Output "Nuspec File: $nuspec_file"
               Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
