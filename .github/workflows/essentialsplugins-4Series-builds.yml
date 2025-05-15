@@ -56,11 +56,6 @@ jobs:
       - name: Build Solution        
         run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m   
 
-      - name: Get release notes
-        uses: actions/download-artifact@v4
-        with:
-          name: change-log
-
       - name: Check Package Name
         shell: powershell
         run: |
@@ -92,10 +87,37 @@ jobs:
           $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
       
           # Compare the actual package name with the expected name (case insensitive)
-          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
-            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
-            exit 1
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {            
+            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append            
           }
+      
+      - name: Setup and Publish to GitHub feed
+        run: |
+          if (-not (Test-Path -Path ".\output\*.nupkg")) {
+            Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            exit 1
+          }          
+          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
+            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          }
+          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
+          echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Publish to Nuget.org (public repos only) 
+        if: github.repository_owner == 'PepperDash' && github.repository.visibility == 'public'
+        run: |      
+          nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
+          nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+      
+      - name: Skipping publish to Nuget.org (non public repos)
+        if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
+        run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
+  
+      # Create the release on the source repo  
+      - name: Get release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: change-log
 
       - name: Upload Release
         if: ${{ inputs.newVersion == 'true' }}
@@ -109,23 +131,4 @@ jobs:
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
 
-      - name: Setup and Publish to GitHub feed
-        run: |
-          if (-not (Test-Path -Path ".\output\*.nupkg")) {
-            Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
-            exit 1
-          }          
-          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
-            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          }
-          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
-
-
-      - name: Setup Nuget
-        if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
-        run: |      
-          nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
-
-      - name: Publish to Nuget
-        if: github.repository_owner == 'PepperDash' && github.repository_visibility == 'public'
-        run: nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+      

@@ -1,4 +1,4 @@
-name: Essentials Plugin Build 3-Series
+name: Essentials Build 3-Series
 
 on:
   workflow_call:
@@ -101,83 +101,30 @@ jobs:
         shell: pwsh
         run: |
           $workspace = $Env:GITHUB_WORKSPACE
-          $solution_filter = "*.3Series.sln"
+          $filter = "*.3Series.sln"
 
-          $solution_file = Get-ChildItem -Path $workspace -Filter $solution_filter -Recurse
+          $solution_file = Get-ChildItem -Path $workspace -Filter $filter -Recurse -Exclude "packages"
 
           Write-Output "Solution File: $($solution_file.BaseName)"
           Write-Output "Solution Path: $($solution_file.Name)"
           Write-Output "Solution Directory: $($solution_file.DirectoryName)"
 
           Write-Output "SOLUTION_FILE=$($solution_file.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Output "SOLUTION_PATH=$($solution_file.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
-          Write-Output "SOLUTION_DIRECTORY=$($solution_file.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
+          Write-Output "SOLUTION_PATH=$($solution_file.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "SOLUTION_DIR=$($solution_file.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+          # WIP - Move file naming to this section
           $repoFullName = "${{ github.repository }}"
-          $repoName = $repoFullName.Split('/')[1]
-          $makeModelParts = $repoName -split '-'
-          if (-not $makeModelParts) {
-              Write-Error "Error: \$makeModelParts is null or empty."
-              exit 1
-          }
-          else {
-              Write-Output "Number of items in \$($makeModelParts): $($makeModelParts.Count)"
-              switch ($makeModelParts.Count) {
-                  1 {
-                      # org/repoName
-                      $make = $makeModelParts[0].Replace(' ', '')
-                      $model = ''
-                  }
-                  2 {
-                      # org/repo-name
-                      $make = $makeModelParts[0].Replace(' ', '')
-                      $model = $makeModelParts[1].Replace(' ', '')
-                  }
-                  3 {
-                      # org/epi-make-model
-                      $make = $makeModelParts[1].Replace(' ', '')
-                      $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
-                  }
-                  Default {
-                      # $make = $makeModelParts[0].Replace(' ', '')
-                      # $model = ($makeModelParts[1..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
-                      Write-Error "Error: Unexpected number of items in \$($makeModelParts): $($makeModelParts.Count)"
-                  }
-              }
-          }
-          
-          $repoIsPlugin = $false
-          if($model -eq '') {
-              # assume non-plugin repo && name override is automatically generated
-              $title = $make
-              $package = $title -replace ' ', ''
-              $repoIsPlugin = $false
-          }
-          else {
-              # TODO [ ] review for standardization - original title implementation
-              $title = (Get-Culture).TextInfo.ToTitleCase("$make") + (Get-Culture).TextInfo.ToTitleCase("$model")
-              
-              # TODO [ ] review for standardization - 4series uses `$make.$model`
-              #$title = (Get-Culture).TextInfo.ToTitleCase("$make.$model")
-              
-              # TODO [ ] review for standardization - 4series build uses `Plugins`
-              $package = "PepperDash.Essentials.Plugin." + ($title -replace ' ', '')
-              $repoIsPlugin = $true
-          }
+          $repoName = $repoFullName.Split('/')[-1]
 
           Write-Output "Repo Full Name: $repoFullName"
           Write-Output "Repo Name: $repoName"
           Write-Output "Repo is Plugin: $repoIsPlugin"
-          Write-Output "Make: $make"
-          Write-Output "Model: $model"
-          Write-Output "Title: $title"
-          Write-Output "Package: $package"
 
           Write-Output "REPO_FULL_NAME=$repoFullName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "REPO_NAME=$repoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Output "REPO_IS_PLUGIN=$repoIsPlugin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Output "EPI_TITLE=$title" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Output "EPI_PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
                   
 
       # Build the solution using the docker image
@@ -197,12 +144,13 @@ jobs:
           $package = $Env:EPI_PACKAGE
           $version = $Env:VERSION
           $plugin = ($Env:REPO_IS_PLUGIN).ToLower()
+          $buildDir = "\\bin\\"
 
           # Define the target file extensions (with leading dot)
-          $validExtensions = @(".cpz", ".clz", ".cplz")
-                    
+          $validExtensions = @(".cpz", ".clz")
+
           # Create the include patterns for Get-ChildItem -Include
-          $includePatterns = $validExtensions | ForEach-Object { "*$_" }
+          $includePatterns = $validExtensions | ForEach-Object { "*$_" }                    
 
           Write-Output "Target File Extensions: $($validExtensions -join ', ')"
           Write-Output "Include Patterns: $($includePatterns -join ', ')"
@@ -214,48 +162,54 @@ jobs:
           Write-Output "`n"
 
           # Create the destination directory if it doesn't exist.
-          Write-Output "Creating destination directory if it doesn't exist..."
           if (Test-Path -Path $destinationDir) {
-              Write-Output "Destination directory already exists. Deleting contents..."
+              Write-Output "Destination '$destinationDir' already exists. Deleting contents..."
               Get-ChildItem -Path $destinationDir | Remove-Item -Force
               Write-Output "`n"
           }
           else {
-              Write-Output "Destination directory does not exist. Creating it..."
+              Write-Output "Destination '$destinationDir' does not exist. Creating it..."
               New-Item -ItemType Directory -Force -Path $destinationDir
               Write-Output "`n"
           }
-          
+
+          switch -Wildcard ($env:REPO_FULL_NAME.ToLower()) {
+              "pepperdash/essentials" {
+                  $validExtensions += @(".dll")
+                  $includePatterns += @("*.dll")
+              }
+              "pepperdash/pepperdashcore" {
+                  
+              }
+          }
 
           Write-Output "`n"
           Write-Output "Source Directory Contents:"
           Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Output $_.FullName }
 
-          if($plugin -eq 'False') {
-              Write-Output "`n"
-              Write-Output "Searching for nuspec files in $sourceDir..."
-              # Search the $sourceDir for any file with extension *.nuspec and copy to the $destinationDir
-              Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
-                  $_.Extension -eq ".nuspec" 
-              } | ForEach-Object {
-                  Write-Output "Copying $($_.Name) to .\"
-                  $_ | Copy-Item -Destination .\ -Force
-                  $nuspec_file = $_.BaseName
-                  Write-Output "Nuspec File: $nuspec_file"
-                  Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-              }
+          Write-Output "Searching for nuspec files in $sourceDir..."
+          # Search the $sourceDir for any file with extension *.nuspec and copy to the $destinationDir
+          Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
+              $_.Extension -eq ".nuspec" 
+          } | ForEach-Object {
+              Write-Output "Copying $($_.Name) to $destinationDir"
+              $_ | Copy-Item -Destination .\ -Force
+              $nuspec_file = $_.BaseName
+              Write-Output "Nuspec File: $nuspec_file"
+              Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
 
           Write-Output "`n"
-          Write-Output "\bin\$($env:BUILD_TYPE) Directory Contents:"
-          Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
-              $_.FullName -match "\\bin\\$($Env:BUILD_TYPE)" 
+          Write-Output "$sourceDir Directory Contents:"
+          Get-ChildItem -Path "$sourceDir" -Recurse | Where-Object { 
+              # $_.FullName -contains "$($buildDir -replace '\\', '\\\\')" -and $_.FullName -notmatch "\\packages\\" -and $validExtensions -contains $_.Extension
+              $_.FullName -notmatch "\\packages\\" -and $validExtensions -contains $_.Extension
           } | ForEach-Object { Write-Output $_.FullName }
 
           # Find files recursively in the source directory with the specified extensions
           # $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { -not $_.FullName.Contains("\packages\") }
           $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { 
-              -not $_.FullName.Contains("\packages\") -and $_.FullName -match "\\bin\\$($Env:BUILD_TYPE)" 
+              -not $_.FullName.Contains("\\packages\\") -and $_.FullName -match "$buildDir" 
           }
 
           # Create a list to store all files to copy, including matching base name files
@@ -271,7 +225,7 @@ jobs:
 
               # Search for any files in $sourceDir with a matching base name or matching the EPI package name
               $matchingFiles = Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
-                  ($_.BaseName -eq $baseName -or $_.BaseName -eq $package) -and $_.Extension -eq ".dll" 
+                  $_.BaseName -eq $baseName -and $_.Extension -eq ".dll" 
               }
 
               # Add the matching files to the list
@@ -302,16 +256,21 @@ jobs:
           Write-Output "`n"
           Write-Output "Renaming files in $destinationDir to include version '$version'..."
 
+          $validExtensions.Clear()
+          $validExtensions += @(".cpz", ".clz")
           # Rename the copied files in the destination directory
-          $validExtensions += @(".dll")
+          Write-Host "Valid Extensions: $($validExtensions -join ', ')"
           Get-ChildItem -Path $destinationDir | Where-Object { $validExtensions -contains $_.Extension } | ForEach-Object {
-              $oldName = $_.Name
-              $baseName = $_.BaseName
-              $extension = $_.Extension # Includes the dot (.)
-              $newName = "$baseName.$version$extension" -Replace '.3Series', ''
-                        
-              Write-Output "- '$oldName' to '$newName'"    
-              Rename-Item -Path $_.FullName -NewName $newName -Force 
+              if($_.Name -match "PepperDashEssentials" -or $_.Name -match "PepperDashCore" -or $_.Name -match "PepperDash_Core") {        
+                  # Remove the version number from the file name
+                  $oldName = $_.Name
+                  $baseName = $_.BaseName
+                  $extension = $_.Extension # Includes the dot (.)
+                  $newName = "$baseName.$version$extension" -Replace '.3Series', ''
+                                      
+                  Write-Output "- '$oldName' to '$newName'"    
+                  Rename-Item -Path $_.FullName -NewName $newName -Force    
+              }
           }
 
           Write-Output "`n"
@@ -323,58 +282,6 @@ jobs:
           Get-ChildItem -Path $destinationDir | ForEach-Object {
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($_.Name)`n"
           }
-        
-      # Remove any existing nuspec files and create a new one
-      - name: Create Nuspec File
-        shell: pwsh
-        run: |
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Create Nuspec File`n"
-          Write-Output "Owner: ${{ github.repository_owner }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Repo: ${{ github.repository }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Repo Name: ${{ env.REPO_NAME }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Repo is Plugin: ${{ env.REPO_IS_PLUGIN }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Title: ${{ env.EPI_TITLE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Package: ${{ env.EPI_PACKAGE }}" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Output Directory: ${{ github.workspace }}\output" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          
-          if ($env:REPO_IS_PLUGIN -eq 'true') {
-              # Remove any existing nuspec files
-              Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
-
-              $year = (Get-Date).Year
-              
-              # Create a new nuspec file
-              $nuspecContent = @"
-          <?xml version='1.0' encoding='utf-8'?>
-          <package>
-              <metadata>
-                  <id>${{ env.EPI_PACKAGE }}</id>
-                  <version>${{ env.VERSION }}</version>
-                  <title>${{ env.EPI_TITLE}}</title>
-                  <authors>PepperDash Technology</authors>
-                  <owners>PepperDash</owners>
-                  <requireLicenseAcceptance>false</requireLicenseAcceptance>
-                  <license type='file'>LICENSE.md</license>
-                  <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
-                  <copyright>Copyright $year</copyright>
-                  <description>${{ env.REPO_NAME}}</description>
-                  <tags>crestron 3series</tags>
-                  <repository type='git' url='https://github.com/${{ github.repository }}'/>
-              </metadata>
-              <files>
-                  <file src='LICENSE.md' target=''/>
-                  <file src='README.md' target=''/>
-                  <file src='.\output\**' target='lib\net35'/>
-              </files>
-          </package>
-          "@
-
-              # Write the nuspec content to a file
-              Write-Output $nuspecContent > ${{ github.workspace }}\project.nuspec    
-              $nuspec_file = (Get-ChildItem *.nuspec -recurse).BaseName
-              Write-Output "Nuspec File: $nuspec_file"
-              Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }          
       
       # Pulls the nuget builder packages
       - name: Add nuget.exe
@@ -420,7 +327,6 @@ jobs:
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
       - name: Publish to Nuget.org
         shell: pwsh
-        # if: github.repository_owner == 'PepperDash' && github.event.repository.visiblity == 'public'
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
           
