@@ -27,7 +27,7 @@ What do I do when a action or build fails?
 /Project-Repo/
 ├── .gitub/
 │   └── workflows/
-│       └── essentialsplugins-builds-caller.yml // <== Essentials Plugins (EPI) caller
+│       ├── essentialsplugins-builds-caller.yml // <== Essentials Plugins (EPI) caller
 │       └── essentials-builds-caller.yml        // <== Essentials & Core caller
 ├── src/
 │   ├── Directory.Build.props
@@ -56,10 +56,11 @@ The following GitHub workflows are available.  The information below provides hi
 > 
 > PepperDash Essentials and PepperDash Core have specific build references that are not shared with Plugins.
 
+`essentials-builds-caller.yml`
 
-#### 4-Series 
+<details>
 
-`essentialsplugins-builds-4series-caller.yml`
+<summary>4-Series</summary>
 
 ```yml
 name: Build PepperDash Essentials
@@ -88,10 +89,11 @@ jobs:
       channel: ${{ needs.getVersion.outputs.channel }}
       bypassPackageCheck: true
 ```
+</details>
 
-#### 3-Series / Maintenance-1x
+<details>
 
-`essentialsplugins-builds-3-series-caller.yml`
+<summary>3-Series / Maintenance-1x</summary>
 
 ```yml
 name: Build Essentials 1.X
@@ -117,6 +119,7 @@ jobs:
       channel: ${{ needs.getVersion.outputs.channel }}
 ```
 
+</details>
 
 ### PepperDash Essentials Plugins (EPIs) 
 
@@ -124,6 +127,10 @@ The caller file below implments both `3-Series` and `4-Series` caller references
 
 > [!NOTE]
 > Remove the `build-3Seires` reference if you only need `.net472+` files.
+
+<details>
+
+<summary>Plugin Build Callers</summary>
 
 ```yml
 name: Build Essentials Plugin
@@ -163,3 +170,4 @@ jobs:
       tag: ${{ needs.getVersion.outputs.tag }}
       channel: ${{ needs.getVersion.outputs.channel }}
 ```
+</details>
