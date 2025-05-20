@@ -4,10 +4,10 @@ This directory contains documentation for the PepperDash GitHub workflow templat
 
 ## Available Documentation
 
-- [Index](index.md): The main entry point for the documentation
-- [Workflows Overview](workflows.md): Comprehensive overview of all available workflows
-- [Workflow Details](workflow-details.md): Detailed information about each individual workflow
-- [Getting Started Guide](getting-started.md): Step-by-step instructions for implementing workflows
+- [Index](docs/index.md): The main entry point for the documentation
+- [Workflows Overview](docs/workflows.md): Comprehensive overview of all available workflows
+- [Workflow Details](docs/workflow-details.md): Detailed information about each individual workflow
+- [Getting Started Guide](docs/getting-started.md): Step-by-step instructions for implementing workflows
 
 ## Purpose
 
