@@ -1,5 +1,8 @@
 # GitHub Workflows
 
+> [!NOTE]
+> For comprehensive documentation on these workflows, please see the [documentation in the docs folder](docs/index.md).
+
 ## Get Versions Workflow
 
 ### Notes
