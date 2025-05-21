@@ -338,12 +338,14 @@ jobs:
 
           if ($owner.ToLower() -ne 'pepperdash' -or $visibility.ToLower() -ne 'public') {
             $msg = "Repository is not public, skipping publishing to NuGet.org." 
-            Write-Warning $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            Write-Warning $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
           }
           else {
             if (-not (Test-Path -Path ".\output\*.nupkg")) {
               $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
-              Write-Error $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+              Write-Error $msg
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
               exit 0
             }
             
