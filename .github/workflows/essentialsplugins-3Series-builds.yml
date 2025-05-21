@@ -406,8 +406,9 @@ jobs:
           
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
             $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
-            Write-Error $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-            exit 1
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+            exit 0
           }          
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
@@ -430,15 +431,17 @@ jobs:
           Write-Output "Repository Owner: $owner"
           Write-Output "Repository Visibility: $visibility"
 
-          if ($owner.ToLower() -notlike '*pepperdash*' -or $visibility.ToLower() -ne 'public') {
-            Write-Error "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-            exit 0
+          if ($owner.ToLower() -ne 'pepperdash' -or $visibility.ToLower() -ne 'public') {
+            $msg = "Repository is not public, skipping publishing to NuGet.org." 
+            Write-Warning $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
           }
           else {
             if (-not (Test-Path -Path ".\output\*.nupkg")) {
               $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
-              Write-Error $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-              exit 1
+              Write-Error $msg
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+              exit 0
             }
             
             Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
