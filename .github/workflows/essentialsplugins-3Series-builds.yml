@@ -431,7 +431,8 @@ jobs:
           Write-Output "Repository Visibility: $visibility"
 
           if ($owner.ToLower() -ne 'pepperdash' -or $visibility.ToLower() -ne 'public') {
-            Write-Warning "Repository is not public, skipping publishing to NuGet.org." | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            $msg = "Repository is not public, skipping publishing to NuGet.org." 
+            Write-Warning $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           }
           else {
             if (-not (Test-Path -Path ".\output\*.nupkg")) {
