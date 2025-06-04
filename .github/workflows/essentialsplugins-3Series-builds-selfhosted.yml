@@ -1,0 +1,378 @@
+name: Essentials Build 3-Series Self-Hosted Runner
+
+on:
+  workflow_call:
+    inputs:
+      newVersion:
+        description: 'new version?'
+        required: true
+        type: string
+      version:
+        description: 'The version of the file to build and push'
+        required: true
+        type: string
+      tag:
+        description: 'The tag of the image to build and push'
+        required: true
+        type: string
+      channel:
+        description: 'The channel of the image to build and push'
+        required: true
+        type: string 
+permissions:
+  contents: write
+  packages: write
+jobs:
+  Build_Project_3-Series:
+    # runs-on: [self-hosted, Windows, X64]
+    runs-on: 
+        group: dmz-windows-2019
+    env:
+      VERSION: ${{ inputs.version }}
+      BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
+      NUSPEC_FILE: ''
+    steps:
+      # First we checkout the source repo
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      # Fetch all tags
+      - name: Fetch tags
+        run: git fetch --tags
+      
+      # Update AssemblyInfo
+      - name: Update AssemblyInfo.cs
+        shell: pwsh
+        run: |
+          # Update AssemblyInfo.cs files with the version from the environment variable VERSION
+          function Update-SourceVersion {
+              Param ([string]$Version)
+              #$fullVersion = $Version
+              $baseVersion = [regex]::Match($Version, "(\d+.\d+.\d+).*").captures.groups[1].value
+              $NewAssemblyVersion = 'AssemblyVersion("' + $baseVersion + '.*")'
+              Write-Output "AssemblyVersion = $NewAssemblyVersion"
+              $NewAssemblyInformationalVersion = 'AssemblyInformationalVersion("' + $Version + '")'
+              Write-Output "AssemblyInformationalVersion = $NewAssemblyInformationalVersion"
+              foreach ($o in $input) {
+                  Write-output $o.FullName
+                  $TmpFile = $o.FullName + ".tmp"
+                  get-content $o.FullName |
+                  ForEach-Object {
+                      $_ -replace 'AssemblyVersion\(".*"\)', $NewAssemblyVersion } |
+                  ForEach-Object {
+                      $_ -replace 'AssemblyInformationalVersion\(".*"\)', $NewAssemblyInformationalVersion
+                  }  > $TmpFile 
+                  move-item $TmpFile $o.FullName -force
+              }
+          }
+
+          # Update all AssemblyInfo.cs files in the repository with the version from the environment variable VERSION
+          function Update-AllAssemblyInfoFiles ( $version ) {
+              foreach ($file in "AssemblyInfo.cs", "AssemblyInfo.vb" ) {
+                  get-childitem -Path $Env:GITHUB_WORKSPACE -recurse | Where-Object { $_.Name -eq $file } | Update-SourceVersion $version 
+              }
+          }
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Update Assembly Info`n"
+          # validate arguments
+          $r = [System.Text.RegularExpressions.Regex]::Match($Env:VERSION, "\d+\.\d+\.\d+.*")          
+          if ($r.Success) {
+              Write-Output "Updating Assembly Version to $Env:VERSION" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+              Update-AllAssemblyInfoFiles $Env:VERSION
+          }
+          else {
+              Write-Output "Error: Input version $Env:VERSION does not match x.y.z format!" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+              Write-Output "Unable to apply version to AssemblyInfo.cs files" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+      
+      # Restore Nuget Packages
+      - name: restore Nuget Packages
+        run: nuget install .\packages.config -OutputDirectory .\packages -ExcludeVersion
+      
+      # Login to Docker
+      - name: Login to Docker
+        uses: azure/docker-login@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+        
+      # Get the SLN Path & file
+      - name: Get Project Info
+        shell: pwsh
+        run: |
+          $workspace = $Env:GITHUB_WORKSPACE
+          $filter = "*.3Series.sln"
+
+          $solution_file = Get-ChildItem -Path $workspace -Filter $filter -Recurse -Exclude "packages"
+
+          Write-Output "Solution File: $($solution_file.BaseName)"
+          Write-Output "Solution Path: $($solution_file.Name)"
+          Write-Output "Solution Directory: $($solution_file.DirectoryName)"
+
+          Write-Output "SOLUTION_FILE=$($solution_file.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "SOLUTION_PATH=$($solution_file.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "SOLUTION_DIR=$($solution_file.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          # WIP - Move file naming to this section
+          $repoFullName = "${{ github.repository }}"
+          $repoName = $repoFullName.Split('/')[-1]
+
+          Write-Output "Repo Full Name: $repoFullName"
+          Write-Output "Repo Name: $repoName"
+          Write-Output "Repo is Plugin: $repoIsPlugin"
+
+          Write-Output "REPO_FULL_NAME=$repoFullName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "REPO_NAME=$repoName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "REPO_IS_PLUGIN=$repoIsPlugin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+                  
+
+      # Build the solution using the docker image
+      - name: Build Solution
+        shell: powershell
+        run: |
+          Write-Output "Preparing to build solution`n- Solution File: $($Env:SOLUTION_FILE)`n- Solution Path: $($Env:SOLUTION_PATH)`n- Solution Directory: $($Env:SOLUTION_DIRECTORY)`n- Build Type: $($ENV:BUILD_TYPE)`n- Version: $($ENV:VERSION)`n- Workspace: $($Env:GITHUB_WORKSPACE)"
+          Invoke-Expression "docker run --rm --mount type=bind,source=""$($Env:GITHUB_WORKSPACE)"",target=""c:\project"" pepperdash/sspbuilder c:\cihelpers\vsidebuild.exe -Solution ""c:\project\$($Env:SOLUTION_PATH)"" -BuildSolutionConfiguration $($ENV:BUILD_TYPE)"
+      
+      # Copy the build output files to the output directory      
+      - name: Copy build output files
+        shell: pwsh
+        run: |
+          # GitHub Actions environment variables
+          $sourceDir = "$Env:GITHUB_WORKSPACE" 
+          $destinationDir = "$Env:GITHUB_WORKSPACE\output"
+          $package = $Env:EPI_PACKAGE
+          $version = $Env:VERSION
+          $plugin = ($Env:REPO_IS_PLUGIN).ToLower()
+          $buildDir = "\\bin\\"
+
+          # Define the target file extensions (with leading dot)
+          $validExtensions = @(".cpz", ".clz")
+
+          # Create the include patterns for Get-ChildItem -Include
+          $includePatterns = $validExtensions | ForEach-Object { "*$_" }                    
+
+          Write-Output "Target File Extensions: $($validExtensions -join ', ')"
+          Write-Output "Include Patterns: $($includePatterns -join ', ')"
+          Write-Output "Source Directory: $sourceDir"
+          Write-Output "Destination Directory: $destinationDir"
+          Write-Output "Package Name: $package"
+          Write-Output "Version: $version"
+          Write-Output "Plugin: $plugin"
+          Write-Output "`n"
+
+          # Create the destination directory if it doesn't exist.
+          if (Test-Path -Path $destinationDir) {
+              Write-Output "Destination '$destinationDir' already exists. Deleting contents..."
+              Get-ChildItem -Path $destinationDir | Remove-Item -Force
+              Write-Output "`n"
+          }
+          else {
+              Write-Output "Destination '$destinationDir' does not exist. Creating it..."
+              New-Item -ItemType Directory -Force -Path $destinationDir
+              Write-Output "`n"
+          }
+
+          switch -Wildcard ($env:REPO_FULL_NAME.ToLower()) {
+              "pepperdash/essentials" {
+                  $validExtensions += @(".dll")
+                  $includePatterns += @("*.dll")
+              }
+              "pepperdash/pepperdashcore" {
+                  
+              }
+          }
+
+          Write-Output "`n"
+          Write-Output "Source Directory Contents:"
+          Get-ChildItem -Path $sourceDir | ForEach-Object { Write-Output $_.FullName }
+
+          Write-Output "Searching for nuspec files in $sourceDir..."
+          # Search the $sourceDir for any file with extension *.nuspec and copy to the $destinationDir
+          Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
+              $_.Extension -eq ".nuspec" 
+          } | ForEach-Object {
+              Write-Output "Copying $($_.Name) to $destinationDir"
+              $_ | Copy-Item -Destination .\ -Force
+              $nuspec_file = $_.BaseName
+              Write-Output "Nuspec File: $nuspec_file"
+              Write-Output "NUSPEC_FILE=$($nuspec_file)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+          Write-Output "`n"
+          Write-Output "$sourceDir Directory Contents:"
+          Get-ChildItem -Path "$sourceDir" -Recurse | Where-Object { 
+              # $_.FullName -contains "$($buildDir -replace '\\', '\\\\')" -and $_.FullName -notmatch "\\packages\\" -and $validExtensions -contains $_.Extension
+              $_.FullName -notmatch "\\packages\\" -and $validExtensions -contains $_.Extension
+          } | ForEach-Object { Write-Output $_.FullName }
+
+          # Find files recursively in the source directory with the specified extensions
+          # $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { -not $_.FullName.Contains("\packages\") }
+          $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object { 
+              -not $_.FullName.Contains("\\packages\\") -and $_.FullName -match "$buildDir" 
+          }
+
+          # Create a list to store all files to copy, including matching base name files
+          $allFilesToCopy = @()
+
+          # Iterate through each file found with the initial include patterns
+          $filesToCopy | ForEach-Object {
+              $file = $_
+              $baseName = $file.BaseName
+
+              # Add the current file to the list
+              $allFilesToCopy += $file
+
+              # Search for any files in $sourceDir with a matching base name or matching the EPI package name
+              $matchingFiles = Get-ChildItem -Path $sourceDir -Recurse | Where-Object { 
+                  $_.BaseName -eq $baseName -and $_.Extension -eq ".dll" 
+              }
+
+              # Add the matching files to the list
+              $allFilesToCopy += $matchingFiles
+
+              # Add the matching files to the list
+              $allFilesToCopy += $matchingFiles
+          }
+
+          Write-Output "`n"
+          Write-Output "Found $($allFilesToCopy.Count) files to copy."
+          Write-Output $allFilesToCopy | ForEach-Object { $_.FullName }
+
+          # Remove duplicates from the list
+          $allFilesToCopy = $allFilesToCopy | Sort-Object FullName -Unique
+
+          # Copy all files to the destination directory
+          $allFilesToCopy | ForEach-Object {
+              Write-Output "Copying $($_.FullName) to $destinationDir"
+              $_ | Copy-Item -Destination $destinationDir -Force
+          }
+
+          Write-Output "`n"
+          Write-Output "File copy process completed."
+          Write-Output "Destination Directory Contents:"
+          Get-ChildItem -Path $destinationDir | ForEach-Object { Write-Output $_.FullName }
+
+          Write-Output "`n"
+          Write-Output "Renaming files in $destinationDir to include version '$version'..."
+
+          $validExtensions.Clear()
+          $validExtensions += @(".cpz", ".clz")
+          # Rename the copied files in the destination directory
+          Write-Host "Valid Extensions: $($validExtensions -join ', ')"
+          Get-ChildItem -Path $destinationDir | Where-Object { $validExtensions -contains $_.Extension } | ForEach-Object {
+              if($_.Name -match "PepperDashEssentials" -or $_.Name -match "PepperDashCore" -or $_.Name -match "PepperDash_Core") {        
+                  # Remove the version number from the file name
+                  $oldName = $_.Name
+                  $baseName = $_.BaseName
+                  $extension = $_.Extension # Includes the dot (.)
+                  $newName = "$baseName.$version$extension" -Replace '.3Series', ''
+                                      
+                  Write-Output "- '$oldName' to '$newName'"    
+                  Rename-Item -Path $_.FullName -NewName $newName -Force    
+              }
+          }
+
+          Write-Output "`n"
+          Write-Output "File renaming process completed."
+          Write-Output "Contents of destination directory ($destinationDir):"
+          Get-ChildItem -Path $destinationDir
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Copy build output files`n"
+          Get-ChildItem -Path $destinationDir | ForEach-Object {
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($_.Name)`n"
+          }
+      
+      # Pulls the nuget builder packages
+      - name: Add nuget.exe
+        if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
+        uses: nuget/setup-nuget@v2        
+      
+        # Creating nuget Packages
+      - name: Create nuget package
+        shell: pwsh
+        if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
+        run: |
+          $filePath = ".\${{ env.NUSPEC_FILE }}.nuspec"
+          
+          # Check if the nuspec file exists before running nuget pack
+          if (-not (Test-Path -Path $filePath)) {
+            Write-Error "NuGet nuspec file not found. Check if the build process created the package correctly."
+            exit 1
+          }
+          
+          # pack the nuspec file 
+          nuget pack $filePath -version ${{ env.VERSION }} -OutputDirectory .\output
+      
+      # Pushes to internal github registry
+      - name: Setup and Publish to GitHub feed
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GitHub Feed`n"
+          
+          if (-not (Test-Path -Path ".\output\*.nupkg")) {
+            $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            Write-Error $msg | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            exit 1
+          }          
+          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
+            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          }
+          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
+
+          
+          Write-Output "Publishing ${{ github.repository }} to GitHub feed" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+
+      # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
+      - name: Publish to Nuget.org
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
+          
+          $owner = "${{ github.repository_owner }}"
+          $visibility = "${{ github.event.repository.visibility }}"
+
+          Write-Output "Repository Owner: $owner"
+          Write-Output "Repository Visibility: $visibility"
+
+          if ($owner.ToLower() -ne 'pepperdash' -or $visibility.ToLower() -ne 'public') {
+            $msg = "Repository is not public, skipping publishing to NuGet.org." 
+            Write-Warning $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+          }
+          else {
+            if (-not (Test-Path -Path ".\output\*.nupkg")) {
+              $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+              Write-Error $msg
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+              exit 0
+            }
+            
+            Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
+            nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+          }
+          
+    
+      # Create the release on the source repo
+      - name: Get release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: change-log
+      
+      # Upload the release to the source repo
+      - name: Upload Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          artifacts: output\*.*(cpz|cplz|clz)
+          prerelease: ${{ inputs.channel != '' }}
+          tag: ${{ inputs.tag }}
+          commit: ${{ github.sha }}
+          bodyFile: .\CHANGELOG.md
+
+    
