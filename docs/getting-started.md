@@ -20,8 +20,8 @@ Your project should follow this basic structure:
 │   └── workflows/
 │       └── [your workflow caller files]
 ├── src/
-│   ├── Directory.Build.props  (optional but recommended)
-│   ├── Directory.Build.targets  (optional but recommended)
+│   ├── Directory.Build.props  (required for 4-Series builds)
+│   ├── Directory.Build.targets  (required for 4-Series builds))
 │   ├── *.3series.csproj  (for 3-Series builds)
 │   ├── *.4series.csproj  (for 4-Series builds)
 │   └── [source code files]
