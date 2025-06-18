@@ -104,14 +104,37 @@ jobs:
           echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Publish to Nuget.org (public repos only) 
-        if: github.repository_owner == 'PepperDash' && github.repository.visibility == 'public'
-        run: |      
-          nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json          
-          nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+        # if: github.repository_owner == 'PepperDash' && github.repository.visibility == 'public'
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
+          
+          $owner = "${{ github.repository_owner }}"
+          $visibility = "${{ github.event.repository.visibility }}"
+
+          Write-Output "Repository Owner: $owner"
+          Write-Output "Repository Visibility: $visibility"
+
+          if ($owner.ToLower() -ne 'pepperdash' -or $visibility.ToLower() -ne 'public') {
+            $msg = "Repository is not public, skipping publishing to NuGet.org." 
+            Write-Warning $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+          }
+          else {
+            if (-not (Test-Path -Path ".\output\*.nupkg")) {
+              $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+              Write-Error $msg
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+              exit 0
+            }
+            
+            Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+            nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
+            nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+          }
       
-      - name: Skipping publish to Nuget.org (non public repos)
-        if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
-        run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
+     # - name: Skipping publish to Nuget.org (non public repos)
+      #  if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
+      #  run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
   
       # Create the release on the source repo  
       - name: Get release notes
