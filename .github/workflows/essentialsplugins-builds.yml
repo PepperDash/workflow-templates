@@ -23,7 +23,9 @@ env:
 jobs:
 
   Build_Project:
-    runs-on: windows-2019
+    name: Build Essentials 1.x Plugin
+    runs-on: 
+      group: dmz-windows-2019
     steps:
       # First we checkout the source repo
 

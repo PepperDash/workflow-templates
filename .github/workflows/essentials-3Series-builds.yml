@@ -24,7 +24,9 @@ permissions:
   packages: write
 jobs:
   Build_Project_3-Series:
-    runs-on: windows-2019
+    name: Build Essentials and Core 1.x
+    runs-on: 
+      group: dmz-windows-2019
     env:
       VERSION: ${{ inputs.version }}
       BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
