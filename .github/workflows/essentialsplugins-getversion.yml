@@ -30,28 +30,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-    - name: Get branch name
-      id: get_branch
-      run: |
-        branch=${GITHUB_REF#refs/heads/}
-        echo "branch=$branch" >> $GITHUB_OUTPUT
-        echo "prerelease=${branch//\//-}" >> $GITHUB_OUTPUT
-      env:
-        GITHUB_REF: ${{ github.ref }}
-    - name: Replace branch name in .releaserc.json
-      if: steps.get_branch.outputs.branch != 'main'
-      uses: jacobtomlinson/gha-find-replace@master
-      with:
-        find: 'replace-me-feature-branch'
-        replace: '${{ steps.get_branch.outputs.branch }}'
-        include: '.releaserc.json'
-    - name: Replace prerelease name in .releaserc.json
-      if: steps.get_branch.outputs.branch != 'main'
-      uses: jacobtomlinson/gha-find-replace@master
-      with:
-        find: 'replace-me-prerelease'
-        replace: '${{ steps.get_branch.outputs.prerelease }}'
-        include: '.releaserc.json'
     - name: Get version number
       id: get_version
       run: npx --package=semantic-release --package=@semantic-release/commit-analyzer --package=@semantic-release/release-notes-generator --package=@semantic-release/changelog --package=@semantic-release/exec -- semantic-release
