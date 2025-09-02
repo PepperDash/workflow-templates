@@ -125,31 +125,29 @@ jobs:
           else {
               Write-Output "Number of items in \$($makeModelParts): $($makeModelParts.Count)"
               switch ($makeModelParts.Count) {
-                  1 {
-                      # org/repoName
-                      $make = $makeModelParts[0].Replace(' ', '')
-                      $model = ''
-                  }
-                  2 {
-                      # org/repo-name
-                      $make = $makeModelParts[0].Replace(' ', '')
-                      $model = $makeModelParts[1].Replace(' ', '')
-                  }
-                  3 {
-                      # org/epi-make-model
-                      $make = $makeModelParts[1].Replace(' ', '')
-                      $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
-                  }
-                  4 {
+                0 {
+                  Write-Error "Error: Expected information not found, verify solution name."
+                }    
+                1 {
+                    # org/repoName
+                    $make = $makeModelParts[0].Replace(' ', '')
+                    $model = ''
+                }
+                2 {
+                    # org/repo-name
+                    $make = $makeModelParts[0].Replace(' ', '')
+                    $model = $makeModelParts[1].Replace(' ', '')
+                }
+                3 {
                     # org/epi-make-model
                     $make = $makeModelParts[1].Replace(' ', '')
                     $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
-                  }
-                  Default {
-                      # $make = $makeModelParts[0].Replace(' ', '')
-                      # $model = ($makeModelParts[1..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
-                      Write-Error "Error: Unexpected number of items in \$($makeModelParts): $($makeModelParts.Count)"
-                  }
+                }
+                Default {
+                  # org/epi-make-model-variant
+                  $make = $makeModelParts[1].Replace(' ', '')
+                  $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
+                }
               }
           }
           
