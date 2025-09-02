@@ -140,6 +140,11 @@ jobs:
                       $make = $makeModelParts[1].Replace(' ', '')
                       $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
                   }
+                  4 {
+                    # org/epi-make-model
+                    $make = $makeModelParts[1].Replace(' ', '')
+                    $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
+                  }
                   Default {
                       # $make = $makeModelParts[0].Replace(' ', '')
                       # $model = ($makeModelParts[1..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
