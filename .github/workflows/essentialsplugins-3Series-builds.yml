@@ -417,7 +417,7 @@ jobs:
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
             exit 0
           }          
-          if (-not (nuget sources list | Select-String -Pattern ${{ env.NUGET_SOURCE }})) {
+          if (-not (nuget sources list | Select-String -Pattern "${{ env.NUGET_SOURCE }}")) {
             nuget sources add -name ${{ github.repository_owner }} -source ${{ env.NUGET_SOURCE }} -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
           # Find the .nupkg file(s) in the output directory
