@@ -416,7 +416,7 @@ jobs:
             exit 0
           }          
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
-            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+            nuget sources add -name ${{ github.repository_owner }} -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
           # Find the .nupkg file(s) in the output directory
           $nupkgFiles = Get-ChildItem -Path .\output\*.nupkg
