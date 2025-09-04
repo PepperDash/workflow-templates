@@ -125,26 +125,29 @@ jobs:
           else {
               Write-Output "Number of items in \$($makeModelParts): $($makeModelParts.Count)"
               switch ($makeModelParts.Count) {
-                  1 {
-                      # org/repoName
-                      $make = $makeModelParts[0].Replace(' ', '')
-                      $model = ''
-                  }
-                  2 {
-                      # org/repo-name
-                      $make = $makeModelParts[0].Replace(' ', '')
-                      $model = $makeModelParts[1].Replace(' ', '')
-                  }
-                  3 {
-                      # org/epi-make-model
-                      $make = $makeModelParts[1].Replace(' ', '')
-                      $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
-                  }
-                  Default {
-                      # $make = $makeModelParts[0].Replace(' ', '')
-                      # $model = ($makeModelParts[1..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
-                      Write-Error "Error: Unexpected number of items in \$($makeModelParts): $($makeModelParts.Count)"
-                  }
+                0 {
+                  Write-Error "Error: Expected information not found, verify solution name."
+                }    
+                1 {
+                    # org/repoName
+                    $make = $makeModelParts[0].Replace(' ', '')
+                    $model = ''
+                }
+                2 {
+                    # org/repo-name
+                    $make = $makeModelParts[0].Replace(' ', '')
+                    $model = $makeModelParts[1].Replace(' ', '')
+                }
+                3 {
+                    # org/epi-make-model
+                    $make = $makeModelParts[1].Replace(' ', '')
+                    $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
+                }
+                Default {
+                  # org/epi-make-model-variant
+                  $make = $makeModelParts[1].Replace(' ', '')
+                  $model = ($makeModelParts[2..($makeModelParts.Count - 1)] -join '').Replace(' ', '')
+                }
               }
           }
           
@@ -415,8 +418,16 @@ jobs:
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
-          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
+          # Find the .nupkg file(s) in the output directory
+          $nupkgFiles = Get-ChildItem -Path .\output\*.nupkg
+          if ($nupkgFiles.Count -eq 0) {
+          Write-Error "No .nupkg files found in the output directory."
+            exit 1
+          }
+          Write-Output "Found the following .nupkg file(s) to push to GitHub feed:"
+          $nupkgFiles | ForEach-Object { Write-Output $_.FullName }
 
+          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
           
           Write-Output "Publishing ${{ github.repository }} to GitHub feed" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
