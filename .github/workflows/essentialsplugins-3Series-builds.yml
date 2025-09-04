@@ -409,14 +409,16 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GitHub Feed`n"
           
+          Write-Output "NUGET_SOURCE=https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
             $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
             Write-Error $msg
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
             exit 0
           }          
-          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
-            nuget sources add -name ${{ github.repository_owner }} -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          if (-not (nuget sources list | Select-String -Pattern ${{ env.NUGET_SOURCE }})) {
+            nuget sources add -name ${{ github.repository_owner }} -source ${{ env.NUGET_SOURCE }} -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
           # Find the .nupkg file(s) in the output directory
           $nupkgFiles = Get-ChildItem -Path .\output\*.nupkg
@@ -427,8 +429,8 @@ jobs:
           Write-Output "Found the following .nupkg file(s) to push to GitHub feed:"
           $nupkgFiles | ForEach-Object { Write-Output $_.FullName }
 
-          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }}
-          
+          nuget push .\output\*.nupkg -source ${{ env.NUGET_SOURCE }} -apikey ${{ secrets.GITHUB_TOKEN }}
+
           Write-Output "Publishing ${{ github.repository }} to GitHub feed" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
 
       # Pushes to nuget.org Only if the repo is public and the owner is PepperDash
@@ -459,7 +461,7 @@ jobs:
             
             Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
-            nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
+            nuget push .\output\*.nupkg -source https://api.nuget.org/v3/index.json
           }
           
     
