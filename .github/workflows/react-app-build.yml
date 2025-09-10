@@ -75,7 +75,12 @@ jobs:
       - name: Clean up after failed build
         if: failure() && steps.build.conclusion == 'failure'
         run: |
-          git push origin --delete ${{ inputs.tag }}
+          # Only attempt to delete the tag if it exists on the remote
+          if git ls-remote --tags origin "${{ inputs.tag }}" | grep -q "${{ inputs.tag }}$"; then
+            git push origin --delete "${{ inputs.tag }}"
+          else
+            echo "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
+          fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
