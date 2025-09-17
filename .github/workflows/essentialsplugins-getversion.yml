@@ -54,7 +54,7 @@ jobs:
         include: '.releaserc.json'
     - name: Get version number
       id: get_version
-      run: npx --package=semantic-release --package=@semantic-release/commit-analyzer --package=@semantic-release/release-notes-generator --package=@semantic-release/changelog --package=@semantic-release/exec -- semantic-release
+      run: npx --package=semantic-release --package=@semantic-release/commit-analyzer --package=@semantic-release/release-notes-generator --package=@semantic-release/changelog --package=@semantic-release/exec --package=conventional-changelog-conventionalcommits -- semantic-release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN}}
     - name: Print summary if no new version
