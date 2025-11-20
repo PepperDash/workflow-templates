@@ -102,8 +102,10 @@ jobs:
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Configuration**: $($ENV:BUILD_TYPE)`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Version**: ${{ inputs.version }}`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Solution**: ${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Output**: $($buildOutput)`n"
           } else {
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD FAILED** - Exit code: $LASTEXITCODE`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Output**: $($buildOutput)`n"
             exit $LASTEXITCODE
           }   
 
