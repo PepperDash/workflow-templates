@@ -96,16 +96,18 @@ jobs:
           # Display output
           $buildOutput | Out-String | Write-Output
           
+          # Save build output to file
+          $buildOutput | Out-String | Out-File -FilePath "build-output.log" -Encoding utf8
+          
           # Check for build success
           if ($LASTEXITCODE -eq 0) {
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD SUCCESS**`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Configuration**: $($ENV:BUILD_TYPE)`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Version**: ${{ inputs.version }}`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Solution**: ${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln`n"
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Output**: $($buildOutput)`n"
           } else {
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD FAILED** - Exit code: $LASTEXITCODE`n"
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Output**: $($buildOutput)`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Check the step logs above for detailed error information.`n"
             exit $LASTEXITCODE
           }   
 
@@ -129,6 +131,16 @@ jobs:
           }
           
           exit 1
+      
+
+      # ---------------------------
+      - name: Upload Build Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-log
+          path: build-output.log
+          retention-days: 30
       
 
       # ---------------------------
