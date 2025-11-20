@@ -85,11 +85,33 @@ jobs:
         run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
 
       # ---------------------------
-      - name: Build Solution        
+      - name: Build Solution       
+        id: build
         run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m   
 
       # ---------------------------
+      - name: Clean up after failed build
+        if: failure() && steps.build.conclusion == 'failure'
+        run: |
+          # Only attempt to delete the tag if it exists on the remote
+          if git ls-remote --tags origin "${{ inputs.tag }}" | grep -q "${{ inputs.tag }}$"; then
+            git push origin --delete "${{ inputs.tag }}"
+          else
+            echo "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "❌ **BUILD FAILED**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The build output above shows the specific errors that caused the build to fail." >> $GITHUB_STEP_SUMMARY
+      
+
+      # ---------------------------
       - name: Check Package Name
+        continue-on-error: true
         shell: powershell
         run: |
           if ("${{ inputs.bypassPackageCheck }}" -eq "true") {
@@ -111,8 +133,9 @@ jobs:
           # Locate the generated NuGet package in the output directory
           $packageFile = Get-ChildItem -Path .\output -Filter *.nupkg -Recurse
           if ($null -eq $packageFile) {
-            Write-Error "No NuGet package found in the output directory."
-            Write-Output "::error::No NuGet package found in the output directory. Please check if the build generated the package correctly."
+            $msg = "No NuGet package found in the output directory. Please check if the build generated the package correctly."
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ❌ Check Package Name Failed`n$msg`n"
             exit 1
           }
       
@@ -120,13 +143,17 @@ jobs:
           $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
       
           # Compare the actual package name with the expected name (case insensitive)
-          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {            
-            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append            
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
+            $msg = "Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ❌ Check Package Name Failed`n$msg`n"
+            exit 1
           }
       
       # ---------------------------
       # Create the release on the source repo  
       - name: Get release notes
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: change-log
@@ -134,6 +161,7 @@ jobs:
       # ---------------------------
       # Upload the release to the source repo
       - name: Upload Release
+        continue-on-error: true
         if: ${{ inputs.newVersion == 'true' }}
         id: create_release
         uses: ncipollo/release-action@v1
@@ -148,36 +176,48 @@ jobs:
       # ---------------------------
       # Publish to GitHub Packages NuGet feed
       - name: Setup and Publish to GitHub feed
+        continue-on-error: true
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GitHub Package Feed`n"
           
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
-            Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "❌ $msg`n"
             exit 1
           }          
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
           
-          Get-ChildItem -Path .\output -Recurse -Include *.cpz, *.cplz | ForEach-Object {
-            $packageName = $_.Name
-            Write-Output "Checking if package $packageName already exists..."
-            
-            # Try to check if package exists by attempting to list it
-            $existingPackage = nuget list $packageName -source github -prerelease 2>&1
-            if ($existingPackage -match $packageName) {
-              $msg = "Package $packageName already exists in GitHub feed. Will skip if duplicate."
-              Write-Warning $msg
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "⚠️ $msg`n"
+          try {
+            Get-ChildItem -Path .\output -Recurse -Include *.cpz, *.cplz | ForEach-Object {
+              $packageName = $_.Name
+              Write-Output "Checking if package $packageName already exists..."
+              
+              # Try to check if package exists by attempting to list it
+              $existingPackage = nuget list $packageName -source github -prerelease 2>&1
+              if ($existingPackage -match $packageName) {
+                $msg = "Package $packageName already exists in GitHub feed. Will skip if duplicate."
+                Write-Warning $msg
+                Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "⚠️ $msg`n"
+              }
+              
+              nuget push $_.FullName -source github -apikey ${{ secrets.GITHUB_TOKEN }} -SkipDuplicate
             }
-            
-            nuget push $_.FullName -source github -apikey ${{ secrets.GITHUB_TOKEN }} -SkipDuplicate
+            echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
           }
-          echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
+          catch {
+            $msg = "Failed to publish to GitHub feed: $($_.Exception.Message)"
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "❌ $msg`n"
+            exit 1
+          }
 
       # ---------------------------
       # Publish to Nuget.org (public repos only)
-      - name: Publish to Nuget.org (public repos only) 
+      - name: Publish to Nuget.org (public repos only)
+        continue-on-error: true
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
           
@@ -203,19 +243,27 @@ jobs:
             Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
             nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
             
-            Get-ChildItem -Path .\output -Recurse -Include *.cpz, *.cplz | ForEach-Object {
-              $packageName = $_.Name
-              Write-Output "Checking if package $packageName already exists on NuGet.org..."
-              
-              # Try to check if package exists by attempting to list it
-              $existingPackage = nuget list $packageName -Source https://api.nuget.org/v3/index.json -prerelease 2>&1
-              if ($existingPackage -match $packageName) {
-                $msg = "Package $packageName already exists on NuGet.org. Will skip if duplicate."
-                Write-Warning $msg
-                Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "⚠️ $msg`n"
+            try {
+              Get-ChildItem -Path .\output -Recurse -Include *.cpz, *.cplz | ForEach-Object {
+                $packageName = $_.Name
+                Write-Output "Checking if package $packageName already exists on NuGet.org..."
+                
+                # Try to check if package exists by attempting to list it
+                $existingPackage = nuget list $packageName -Source https://api.nuget.org/v3/index.json -prerelease 2>&1
+                if ($existingPackage -match $packageName) {
+                  $msg = "Package $packageName already exists on NuGet.org. Will skip if duplicate."
+                  Write-Warning $msg
+                  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "⚠️ $msg`n"
+                }
+                
+                nuget push $_.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
               }
-              
-              nuget push $_.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
+            }
+            catch {
+              $msg = "Failed to publish to NuGet.org: $($_.Exception.Message)"
+              Write-Error $msg
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "❌ $msg`n"
+              exit 1
             }
           }
 
