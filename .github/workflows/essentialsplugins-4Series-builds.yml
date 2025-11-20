@@ -87,30 +87,51 @@ jobs:
       # ---------------------------
       - name: Build Solution       
         id: build
-        run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m   
+        shell: powershell
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### 🔨 Build Solution`n"
+          
+          $buildOutput = msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m 2>&1
+          
+          # Display output
+          $buildOutput | Out-String | Write-Output
+          
+          # Check for build success
+          if ($LASTEXITCODE -eq 0) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "✅ Build completed successfully`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Configuration**: $($ENV:BUILD_TYPE)`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Version**: ${{ inputs.version }}`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Solution**: ${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln`n"
+          } else {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "❌ Build failed with exit code $LASTEXITCODE`n"
+            exit $LASTEXITCODE
+          }   
 
       # ---------------------------
       - name: Clean up after failed build
         if: failure() && steps.build.conclusion == 'failure'
+        shell: powershell
         run: |
-          # Only attempt to delete the tag if it exists on the remote
-          if git ls-remote --tags origin "${{ inputs.tag }}" | grep -q "${{ inputs.tag }}$"; then
-            git push origin --delete "${{ inputs.tag }}"
-          else
-            echo "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "## Build Result" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "❌ **BUILD FAILED**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The build output above shows the specific errors that caused the build to fail." >> $GITHUB_STEP_SUMMARY
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ❌ Build Failed`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
+          
+          # Check if tag exists on remote and delete it
+          $tagExists = git ls-remote --tags origin "${{ inputs.tag }}" 2>&1
+          if ($tagExists -match "${{ inputs.tag }}") {
+            Write-Output "Deleting tag '${{ inputs.tag }}' from remote..."
+            git push origin --delete "${{ inputs.tag }}" 2>&1
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "🗑️ Deleted tag ``${{ inputs.tag }}`` from remote.`n"
+          }
+          else {
+            Write-Output "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
+          }
+          
+          exit 1
       
 
       # ---------------------------
       - name: Check Package Name
+        if: success()
         continue-on-error: true
         shell: powershell
         run: |
@@ -153,6 +174,7 @@ jobs:
       # ---------------------------
       # Create the release on the source repo  
       - name: Get release notes
+        if: success() && inputs.newVersion == 'true'
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
@@ -161,8 +183,8 @@ jobs:
       # ---------------------------
       # Upload the release to the source repo
       - name: Upload Release
+        if: success() && inputs.newVersion == 'true'
         continue-on-error: true
-        if: ${{ inputs.newVersion == 'true' }}
         id: create_release
         uses: ncipollo/release-action@v1
         with:
@@ -176,6 +198,7 @@ jobs:
       # ---------------------------
       # Publish to GitHub Packages NuGet feed
       - name: Setup and Publish to GitHub feed
+        if: success() && inputs.newVersion == 'true'
         continue-on-error: true
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GitHub Package Feed`n"
@@ -217,6 +240,7 @@ jobs:
       # ---------------------------
       # Publish to Nuget.org (public repos only)
       - name: Publish to Nuget.org (public repos only)
+        if: success() && inputs.newVersion == 'true'
         continue-on-error: true
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
