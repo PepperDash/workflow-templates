@@ -23,33 +23,33 @@ on:
         description: 'Set to true to bypass the package name check.'
         required: false
         type: boolean
-  workflow_dispatch:
-    inputs:
-      newVersion:
-        description: 'New version?'
-        required: true
-        type: string
-        default: 'false'
-      version:
-        description: 'The version of the file to build and push.'
-        required: true
-        type: string
-        default: '1.0.0'
-      tag:
-        description: 'The tag of the image to build and push.'
-        required: true
-        type: string
-        default: 'v1.0.0'
-      channel:
-        description: 'The channel of the image to build and push.'
-        required: true
-        type: string
-        default: ''
-      bypassPackageCheck:
-        description: 'Set to true to bypass the package name check.'
-        required: false
-        type: boolean
-        default: false
+  # workflow_dispatch:
+  #   inputs:
+  #     newVersion:
+  #       description: 'New version?'
+  #       required: true
+  #       type: string
+  #       default: 'false'
+  #     version:
+  #       description: 'The version of the file to build and push.'
+  #       required: true
+  #       type: string
+  #       default: '1.0.0'
+  #     tag:
+  #       description: 'The tag of the image to build and push.'
+  #       required: true
+  #       type: string
+  #       default: 'v1.0.0'
+  #     channel:
+  #       description: 'The channel of the image to build and push.'
+  #       required: true
+  #       type: string
+  #       default: ''
+  #     bypassPackageCheck:
+  #       description: 'Set to true to bypass the package name check.'
+  #       required: false
+  #       type: boolean
+  #       default: false
       
 env:
   BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
