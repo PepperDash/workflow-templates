@@ -214,7 +214,7 @@ jobs:
           }
           
           try {
-            Get-ChildItem -Path .\output -Recurse -Include *.cpz, *.cplz | ForEach-Object {
+            Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
               $packageName = $_.Name
               Write-Output "Checking if package $packageName already exists..."
               
@@ -268,7 +268,7 @@ jobs:
             nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
             
             try {
-              Get-ChildItem -Path .\output -Recurse -Include *.cpz, *.cplz | ForEach-Object {
+              Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
                 $packageName = $_.Name
                 Write-Output "Checking if package $packageName already exists on NuGet.org..."
                 
