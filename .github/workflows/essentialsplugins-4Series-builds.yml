@@ -30,9 +30,11 @@ jobs:
   Build_Project_4-Series:
     runs-on: windows-latest
     steps:
+      # ---------------------------
       - name: Checkout repo
         uses: actions/checkout@v4     
 
+      # ---------------------------
       - name: Get SLN Info
         id: get_sln_info
         shell: powershell
@@ -47,15 +49,19 @@ jobs:
           Write-Output $solution_path
           echo "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append          
 
+      # ---------------------------
       - name: Setup MS Build
         uses: microsoft/setup-msbuild@v1.1
 
+      # ---------------------------
       - name: Restore Nuget Packages
         run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
 
+      # ---------------------------
       - name: Build Solution        
         run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m   
 
+      # ---------------------------
       - name: Check Package Name
         shell: powershell
         run: |
@@ -91,6 +97,29 @@ jobs:
             echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append            
           }
       
+      # ---------------------------
+      # Create the release on the source repo  
+      - name: Get release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: change-log
+
+      # ---------------------------
+      # Upload the release to the source repo
+      - name: Upload Release
+        if: ${{ inputs.newVersion == 'true' }}
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          artifacts: 'output\**\*.*(cpz|cplz)'          
+          prerelease: ${{ inputs.channel != '' }}
+          tag: ${{ inputs.tag }}
+          commit: ${{ github.sha }}
+          bodyFile: ./CHANGELOG.md
+      
+      # ---------------------------
+      # Publish to GitHub Packages NuGet feed
       - name: Setup and Publish to GitHub feed
         run: |
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
@@ -103,8 +132,9 @@ jobs:
           nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
           echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
 
+      # ---------------------------
+      # Publish to Nuget.org (public repos only)
       - name: Publish to Nuget.org (public repos only) 
-        # if: github.repository_owner == 'PepperDash' && github.repository.visibility == 'public'
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
           
@@ -131,27 +161,5 @@ jobs:
             nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
             nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
           }
-      
-     # - name: Skipping publish to Nuget.org (non public repos)
-      #  if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
-      #  run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
-  
-      # Create the release on the source repo  
-      - name: Get release notes
-        uses: actions/download-artifact@v4
-        with:
-          name: change-log
-
-      - name: Upload Release
-        if: ${{ inputs.newVersion == 'true' }}
-        id: create_release
-        uses: ncipollo/release-action@v1
-        with:
-          allowUpdates: true
-          artifacts: 'output\**\*.*(cpz|cplz)'          
-          prerelease: ${{ inputs.channel != '' }}
-          tag: ${{ inputs.tag }}
-          commit: ${{ github.sha }}
-          bodyFile: ./CHANGELOG.md
 
       
