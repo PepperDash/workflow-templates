@@ -89,7 +89,7 @@ jobs:
         id: build
         shell: powershell
         run: |
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Build Solution`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Solution`n"
           
           $buildOutput = msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m 2>&1
           
@@ -105,9 +105,11 @@ jobs:
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Configuration**: $($ENV:BUILD_TYPE)`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Version**: ${{ inputs.version }}`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Solution**: ${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Log**: [Download build-output-log.zip](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`n"
           } else {
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD FAILED** - Exit code: $LASTEXITCODE`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Check the step logs above for detailed error information.`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Log**: [Download build-output-log.zip](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`n"
             exit $LASTEXITCODE
           }   
 
@@ -116,7 +118,7 @@ jobs:
         if: failure() && steps.build.conclusion == 'failure'
         shell: powershell
         run: |
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Build Failed`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Failed Clean up`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
           
           # Check if tag exists on remote and delete it
@@ -170,7 +172,8 @@ jobs:
           if ($null -eq $packageFile) {
             $msg = "No NuGet package found in the output directory. Please check if the build generated the package correctly."
             Write-Error $msg
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Check Package Name Failed`n$msg`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Check Package Name`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***Failed***`n$msg`n"
             exit 1
           }
       
@@ -181,7 +184,8 @@ jobs:
           if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
             $msg = "Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
             Write-Error $msg
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Check Package Name Failed`n$msg`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Check Package Name`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***Failed***`n$msg`n"
             exit 1
           }
       
@@ -211,15 +215,15 @@ jobs:
       
       # ---------------------------
       # Publish to GitHub Packages NuGet feed
-      - name: Setup and Publish to GitHub feed
+      - name: Publish to GitHub Package Registry
         if: success() && inputs.newVersion == 'true'
         continue-on-error: true
         run: |
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
             $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
             Write-Error $msg
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GitHub Package Feed`n"
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "ERROR: $msg`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Package Registry`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
             exit 1
           }          
           if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
@@ -236,8 +240,8 @@ jobs:
           catch {
             $msg = "Failed to publish to GitHub feed: $($_.Exception.Message)"
             Write-Error $msg
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GitHub Package Feed`n"
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "ERROR: $msg`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Package Registry`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
             exit 1
           }
 
@@ -260,8 +264,8 @@ jobs:
             if (-not (Test-Path -Path ".\output\*.nupkg")) {
               $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
               Write-Error $msg
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "ERROR: $msg`n"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
               exit 0
             }
             
@@ -278,8 +282,8 @@ jobs:
             catch {
               $msg = "Failed to publish to NuGet.org: $($_.Exception.Message)"
               Write-Error $msg
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "ERROR: $msg`n"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
               exit 1
             }
           }
