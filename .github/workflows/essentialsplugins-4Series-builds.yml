@@ -23,6 +23,33 @@ on:
         description: 'Set to true to bypass the package name check.'
         required: false
         type: boolean
+  # workflow_dispatch:
+  #   inputs:
+  #     newVersion:
+  #       description: 'New version?'
+  #       required: true
+  #       type: string
+  #       default: 'false'
+  #     version:
+  #       description: 'The version of the file to build and push.'
+  #       required: true
+  #       type: string
+  #       default: '1.0.0'
+  #     tag:
+  #       description: 'The tag of the image to build and push.'
+  #       required: true
+  #       type: string
+  #       default: 'v1.0.0'
+  #     channel:
+  #       description: 'The channel of the image to build and push.'
+  #       required: true
+  #       type: string
+  #       default: ''
+  #     bypassPackageCheck:
+  #       description: 'Set to true to bypass the package name check.'
+  #       required: false
+  #       type: boolean
+  #       default: false
       
 env:
   BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
@@ -30,9 +57,11 @@ jobs:
   Build_Project_4-Series:
     runs-on: windows-latest
     steps:
+      # ---------------------------
       - name: Checkout repo
         uses: actions/checkout@v4     
 
+      # ---------------------------
       - name: Get SLN Info
         id: get_sln_info
         shell: powershell
@@ -47,16 +76,79 @@ jobs:
           Write-Output $solution_path
           echo "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append          
 
+      # ---------------------------
       - name: Setup MS Build
         uses: microsoft/setup-msbuild@v1.1
 
+      # ---------------------------
       - name: Restore Nuget Packages
         run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
 
-      - name: Build Solution        
-        run: msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m   
+      # ---------------------------
+      - name: Build Solution       
+        id: build
+        shell: powershell
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Solution`n"
+          
+          $buildOutput = msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m 2>&1
+          
+          # Display output
+          $buildOutput | Out-String | Write-Output
+          
+          # Save build output to file
+          $buildOutput | Out-String | Out-File -FilePath "build-output.log" -Encoding utf8
+          
+          # Check for build success
+          if ($LASTEXITCODE -eq 0) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD SUCCESS**`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Configuration**: $($ENV:BUILD_TYPE)`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Version**: ${{ inputs.version }}`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Solution**: ${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Log**: [Download build-output-log.zip](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`n"
+          } else {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD FAILED** - Exit code: $LASTEXITCODE`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Check the step logs above for detailed error information.`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Build Log**: [Download build-output-log.zip](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`n"
+            exit $LASTEXITCODE
+          }   
 
+      # ---------------------------
+      - name: Clean up after failed build
+        if: failure() && steps.build.conclusion == 'failure'
+        shell: powershell
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Failed Clean up`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
+          
+          # Check if tag exists on remote and delete it
+          $tagExists = git ls-remote --tags origin "${{ inputs.tag }}" 2>&1
+          if ($tagExists -match "${{ inputs.tag }}") {
+            Write-Output "Deleting tag '${{ inputs.tag }}' from remote..."
+            git push origin --delete "${{ inputs.tag }}" 2>&1
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted tag ``${{ inputs.tag }}`` from remote.`n"
+          }
+          else {
+            Write-Output "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
+          }
+          
+          exit 1
+      
+
+      # ---------------------------
+      - name: Upload Build Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-log
+          path: build-output.log
+          retention-days: 30
+      
+
+      # ---------------------------
       - name: Check Package Name
+        if: success()
+        continue-on-error: true
         shell: powershell
         run: |
           if ("${{ inputs.bypassPackageCheck }}" -eq "true") {
@@ -78,8 +170,10 @@ jobs:
           # Locate the generated NuGet package in the output directory
           $packageFile = Get-ChildItem -Path .\output -Filter *.nupkg -Recurse
           if ($null -eq $packageFile) {
-            Write-Error "No NuGet package found in the output directory."
-            Write-Output "::error::No NuGet package found in the output directory. Please check if the build generated the package correctly."
+            $msg = "No NuGet package found in the output directory. Please check if the build generated the package correctly."
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Check Package Name`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***Failed***`n$msg`n"
             exit 1
           }
       
@@ -87,63 +181,28 @@ jobs:
           $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
       
           # Compare the actual package name with the expected name (case insensitive)
-          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {            
-            echo "::error::Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append            
-          }
-      
-      - name: Setup and Publish to GitHub feed
-        run: |
-          if (-not (Test-Path -Path ".\output\*.nupkg")) {
-            Write-Error "No NuGet package found in the output directory. Check if the build process created the package correctly."
+          if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
+            $msg = "Package name mismatch: Expected '$expectedPackageName' but found '$packageName'. Ensure the package name follows the repository naming convention."
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Check Package Name`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***Failed***`n$msg`n"
             exit 1
-          }          
-          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
-            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
-          }
-          nuget push .\output\*.nupkg -source github -apikey ${{ secrets.GITHUB_TOKEN }} 
-          echo "GitHub Event: ${{ github.event }}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Publish to Nuget.org (public repos only) 
-        # if: github.repository_owner == 'PepperDash' && github.repository.visibility == 'public'
-        run: |
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
-          
-          $owner = "${{ github.repository_owner }}"
-          $visibility = "${{ github.event.repository.visibility }}"
-
-          Write-Output "Repository Owner: $owner"
-          Write-Output "Repository Visibility: $visibility"
-
-          if ($owner.ToLower() -ne 'pepperdash' -or $visibility.ToLower() -ne 'public') {
-            $msg = "Repository is not public, skipping publishing to NuGet.org." 
-            Write-Warning $msg
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
-          }
-          else {
-            if (-not (Test-Path -Path ".\output\*.nupkg")) {
-              $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
-              Write-Error $msg
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
-              exit 0
-            }
-            
-            Write-Output "Publishing ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-            nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
-            nuget push .\output\*.nupkg -Source https://api.nuget.org/v3/index.json
           }
       
-     # - name: Skipping publish to Nuget.org (non public repos)
-      #  if: github.repository_owner != 'PepperDash' || github.repository.visibility != 'public'
-      #  run: echo "Repository is not public, skipping publishing to NuGet.org." >> $GITHUB_STEP_SUMMARY
-  
+      # ---------------------------
       # Create the release on the source repo  
       - name: Get release notes
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: change-log
 
+      # ---------------------------
+      # Upload the release to the source repo
       - name: Upload Release
-        if: ${{ inputs.newVersion == 'true' }}
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
         id: create_release
         uses: ncipollo/release-action@v1
         with:
@@ -153,5 +212,78 @@ jobs:
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
           bodyFile: ./CHANGELOG.md
-
       
+      # ---------------------------
+      # Publish to GitHub Packages NuGet feed
+      - name: Publish to GitHub Package Registry
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        run: |
+          if (-not (Test-Path -Path ".\output\*.nupkg")) {
+            $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Package Registry`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
+            exit 1
+          }          
+          if (-not (nuget sources list | Select-String -Pattern "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json")) {
+            nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
+          }
+          
+          try {
+            Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
+              $packageName = $_.Name
+              Write-Output "Pushing $packageName to GitHub feed..."
+              nuget push $_.FullName -source github -apikey ${{ secrets.GITHUB_TOKEN }} -SkipDuplicate
+            }
+          }
+          catch {
+            $msg = "Failed to publish to GitHub feed: $($_.Exception.Message)"
+            Write-Error $msg
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Package Registry`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
+            exit 1
+          }
+
+      # ---------------------------
+      # Publish to Nuget.org (public repos only)
+      - name: Publish to Nuget.org (public repos only)
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        run: |
+          $owner = "${{ github.repository_owner }}"
+          $visibility = "${{ github.event.repository.visibility }}"
+
+          Write-Output "Repository Owner: $owner"
+          Write-Output "Repository Visibility: $visibility"
+
+          if ($owner.ToLower() -ne 'pepperdash' -or $visibility.ToLower() -ne 'public') {
+            Write-Output "Repository is not public, skipping publishing to NuGet.org."
+          }
+          else {
+            if (-not (Test-Path -Path ".\output\*.nupkg")) {
+              $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
+              Write-Error $msg
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
+              exit 0
+            }
+            
+            Write-Output "Publishing ${{ github.repository }} to NuGet.org"
+            nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
+            
+            try {
+              Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
+                $packageName = $_.Name
+                Write-Output "Pushing $packageName to NuGet.org..."
+                nuget push $_.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
+              }
+            }
+            catch {
+              $msg = "Failed to publish to NuGet.org: $($_.Exception.Message)"
+              Write-Error $msg
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
+              exit 1
+            }
+          }
