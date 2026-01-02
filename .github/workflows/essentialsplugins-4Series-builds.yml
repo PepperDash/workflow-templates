@@ -117,6 +117,8 @@ jobs:
       - name: Clean up after failed build
         if: failure() && steps.build.conclusion == 'failure'
         shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Failed Clean up`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
@@ -130,6 +132,22 @@ jobs:
           }
           else {
             Write-Output "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
+          }
+          
+          # Delete all artifacts created during this workflow run
+          Write-Output "Deleting artifacts from workflow run..."
+          $artifactsJson = gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts 2>&1
+          $artifacts = $artifactsJson | ConvertFrom-Json
+          
+          if ($artifacts.total_count -gt 0) {
+            foreach ($artifact in $artifacts.artifacts) {
+              Write-Output "Deleting artifact: $($artifact.name) (ID: $($artifact.id))"
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$($artifact.id) 2>&1
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted artifact ``$($artifact.name)```n"
+            }
+          }
+          else {
+            Write-Output "No artifacts found for this workflow run."
           }
           
           exit 1
