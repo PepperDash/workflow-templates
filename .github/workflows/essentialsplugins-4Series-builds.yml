@@ -77,22 +77,15 @@ jobs:
           echo "SOLUTION_PATH=$($solution_path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append          
 
       # ---------------------------
-      - name: Setup MS Build
-        uses: microsoft/setup-msbuild@v1.1
-
-      # ---------------------------
-      - name: Restore Nuget Packages
-        run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
-
-      # ---------------------------
       - name: Build Solution       
         id: build
         shell: powershell
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Solution`n"
           
-          $buildOutput = msbuild .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m 2>&1
-          
+          # updated msbuild to use dotnet build, which also inlcudes the dotnet restore step
+          $buildOutput = dotnet build .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln /p:Platform="Any CPU" /p:Configuration="$($ENV:BUILD_TYPE)" /p:Version="${{ inputs.version }}" /p:IncludeSourceRevisionInInformationalVersion=false -m 2>&1
+
           # Display output
           $buildOutput | Out-String | Write-Output
           
@@ -113,28 +106,7 @@ jobs:
             exit $LASTEXITCODE
           }   
 
-      # ---------------------------
-      - name: Clean up after failed build
-        if: failure() && steps.build.conclusion == 'failure'
-        shell: powershell
-        run: |
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Failed Clean up`n"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
           
-          # Check if tag exists on remote and delete it
-          $tagExists = git ls-remote --tags origin "${{ inputs.tag }}" 2>&1
-          if ($tagExists -match "${{ inputs.tag }}") {
-            Write-Output "Deleting tag '${{ inputs.tag }}' from remote..."
-            git push origin --delete "${{ inputs.tag }}" 2>&1
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted tag ``${{ inputs.tag }}`` from remote.`n"
-          }
-          else {
-            Write-Output "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
-          }
-          
-          exit 1
-      
-
       # ---------------------------
       - name: Upload Build Output
         if: always()
@@ -144,6 +116,52 @@ jobs:
           path: build-output.log
           retention-days: 30
       
+      
+      # ---------------------------
+      - name: Clean up after failed build
+        if: failure()
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Failed Clean up`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
+          
+          # Delete the release if it exists
+          Write-Output "Checking for release with tag '${{ inputs.tag }}'..."
+          $releaseJson = gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0) {
+            $release = $releaseJson | ConvertFrom-Json
+            Write-Output "Deleting release: $($release.name) (ID: $($release.id))"
+            gh api -X DELETE repos/${{ github.repository }}/releases/$($release.id) 2>&1 | Out-String | Write-Output
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted release ``$($release.name)```n"
+          }
+          else {
+            Write-Output "No release found for tag '${{ inputs.tag }}', skipping delete."
+          }          
+
+          # Check if tag exists on remote and delete it
+          $tagExists = git ls-remote --tags origin "${{ inputs.tag }}" 2>&1
+          if ($tagExists -match "${{ inputs.tag }}") {
+            Write-Output "Deleting tag '${{ inputs.tag }}' from remote..."
+            $ErrorActionPreference = 'SilentlyContinue'
+            $output = git push origin --delete "${{ inputs.tag }}" 2>&1
+            $exitCode = $LASTEXITCODE
+            $ErrorActionPreference = 'Continue'
+            $output | Out-String | Write-Output
+            if ($exitCode -eq 0) {
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted tag ``${{ inputs.tag }}`` from remote.`n"
+            }
+            else {
+              Write-Output "Failed to delete tag '${{ inputs.tag }}' from remote."
+            }
+          }
+          else {
+            Write-Output "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
+          }
+                    
+          exit 1
 
       # ---------------------------
       - name: Check Package Name

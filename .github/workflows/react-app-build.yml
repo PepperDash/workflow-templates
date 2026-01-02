@@ -26,14 +26,20 @@ jobs:
       id-token: write
       contents: write
     steps:
+      # ---------------------------
       - name: Checkout Repo
         uses: actions/checkout@v4
+      
+      
+      # ---------------------------
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           cache: npm
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
+      
+      # ---------------------------
       - name: Set package.json version
         run: |
           if [ '${{ inputs.newVersion }}' = 'true' ]; then
@@ -42,9 +48,13 @@ jobs:
           else
             echo "Not setting package.json version"
           fi
+      
+      # ---------------------------
       - name: Install Packages
         run: |
           npm ci
+
+      # ---------------------------
       - name: Build App
         id: build
         run: |
@@ -72,9 +82,33 @@ jobs:
             echo "Build failed - dist directory not created"
             exit 1
           fi
+
+      # ---------------------------
+      - name: Upload Build Log
+        if: always() && steps.build.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-log
+          path: build_output.log
+          retention-days: 10
+
+      # ---------------------------
       - name: Clean up after failed build
-        if: failure() && steps.build.conclusion == 'failure'
+        if: failure()        
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # Delete the release if it exists
+          # First get the release ID by tag, then delete by ID
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} --jq '.id' 2>/dev/null || echo "")
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Deleting release '${{ inputs.tag }}' (ID: $RELEASE_ID)..."
+            gh api -X DELETE repos/${{ github.repository }}/releases/$RELEASE_ID
+            echo "Release '${{ inputs.tag }}' deleted."
+          else
+            echo "Release '${{ inputs.tag }}' does not exist, skipping delete."
+          fi
+
           # Only attempt to delete the tag if it exists on the remote
           if git ls-remote --tags origin "${{ inputs.tag }}" | grep -q "${{ inputs.tag }}$"; then
             git push origin --delete "${{ inputs.tag }}"
@@ -89,6 +123,8 @@ jobs:
           echo "❌ **BUILD FAILED**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The build output above shows the specific errors that caused the build to fail." >> $GITHUB_STEP_SUMMARY
+
+      # ---------------------------
       - name: Archive Output
         if: success()
         id: package
@@ -105,11 +141,15 @@ jobs:
 
           zip -r ../$filename .
           echo "filename=${filename}" >> $GITHUB_OUTPUT
+
+      # ---------------------------
       - name: Get release notes
         if: success() && inputs.newVersion == 'true'
         uses: actions/download-artifact@v4
         with:
           name: change-log
+
+      # ---------------------------
       - name: Create Release
         id: create_release
         if: success() && inputs.newVersion == 'true'
