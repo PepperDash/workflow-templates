@@ -82,7 +82,8 @@ jobs:
 
       # ---------------------------
       - name: Restore Nuget Packages
-        run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
+        # run: nuget restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
+        run: dotnet restore .\${{ steps.get_sln_info.outputs.SOLUTION_FILE }}.sln
 
       # ---------------------------
       - name: Build Solution       
@@ -125,6 +126,19 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Failed Clean up`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
           
+          # Delete the release if it exists
+          Write-Output "Checking for release with tag '${{ inputs.tag }}'..."
+          $releaseJson = gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0) {
+            $release = $releaseJson | ConvertFrom-Json
+            Write-Output "Deleting release: $($release.name) (ID: $($release.id))"
+            gh api -X DELETE repos/${{ github.repository }}/releases/$($release.id) 2>&1 | Out-String | Write-Output
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted release ``$($release.name)```n"
+          }
+          else {
+            Write-Output "No release found for tag '${{ inputs.tag }}', skipping delete."
+          }          
+
           # Check if tag exists on remote and delete it
           $tagExists = git ls-remote --tags origin "${{ inputs.tag }}" 2>&1
           if ($tagExists -match "${{ inputs.tag }}") {
@@ -140,20 +154,7 @@ jobs:
           else {
             Write-Output "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
           }
-          
-          # Delete the release if it exists
-          Write-Output "Checking for release with tag '${{ inputs.tag }}'..."
-          $releaseJson = gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} 2>&1 | Out-String
-          if ($LASTEXITCODE -eq 0) {
-            $release = $releaseJson | ConvertFrom-Json
-            Write-Output "Deleting release: $($release.name) (ID: $($release.id))"
-            gh api -X DELETE repos/${{ github.repository }}/releases/$($release.id) 2>&1 | Out-String | Write-Output
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted release ``$($release.name)```n"
-          }
-          else {
-            Write-Output "No release found for tag '${{ inputs.tag }}', skipping delete."
-          }
-          
+                    
           exit 1
       
 
