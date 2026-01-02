@@ -91,10 +91,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Delete the release if it exists
-          # if gh release view "${{ inputs.tag }}" > /dev/null 2>&1; then
-          if gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} > /dev/null 2>&1; then
-            echo "Deleting release '${{ inputs.tag }}'..."
-            gh api -X DELETE repos/${{ github.repository }}/releases/tags/${{ inputs.tag }}
+          # First get the release ID by tag, then delete by ID
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} --jq '.id' 2>/dev/null || echo "")
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Deleting release '${{ inputs.tag }}' (ID: $RELEASE_ID)..."
+            gh api -X DELETE repos/${{ github.repository }}/releases/$RELEASE_ID
             echo "Release '${{ inputs.tag }}' deleted."
           else
             echo "Release '${{ inputs.tag }}' does not exist, skipping delete."
