@@ -121,6 +121,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = 'Continue'
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Failed Clean up`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The build output above shows the specific errors that caused the build to fail.`n`n"
           
@@ -128,8 +129,13 @@ jobs:
           $tagExists = git ls-remote --tags origin "${{ inputs.tag }}" 2>&1
           if ($tagExists -match "${{ inputs.tag }}") {
             Write-Output "Deleting tag '${{ inputs.tag }}' from remote..."
-            git push origin --delete "${{ inputs.tag }}" 2>&1
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted tag ``${{ inputs.tag }}`` from remote.`n"
+            git push origin --delete "${{ inputs.tag }}" 2>&1 | Out-String | Write-Output
+            if ($LASTEXITCODE -eq 0) {
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted tag ``${{ inputs.tag }}`` from remote.`n"
+            }
+            else {
+              Write-Output "Failed to delete tag '${{ inputs.tag }}' from remote."
+            }
           }
           else {
             Write-Output "Tag '${{ inputs.tag }}' does not exist on remote, skipping delete."
@@ -137,11 +143,11 @@ jobs:
           
           # Delete the release if it exists
           Write-Output "Checking for release with tag '${{ inputs.tag }}'..."
-          $releaseJson = gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} 2>&1
+          $releaseJson = gh api repos/${{ github.repository }}/releases/tags/${{ inputs.tag }} 2>&1 | Out-String
           if ($LASTEXITCODE -eq 0) {
             $release = $releaseJson | ConvertFrom-Json
             Write-Output "Deleting release: $($release.name) (ID: $($release.id))"
-            gh api -X DELETE repos/${{ github.repository }}/releases/$($release.id) 2>&1
+            gh api -X DELETE repos/${{ github.repository }}/releases/$($release.id) 2>&1 | Out-String | Write-Output
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Deleted release ``$($release.name)```n"
           }
           else {
