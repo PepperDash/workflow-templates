@@ -84,8 +84,16 @@ jobs:
           fi
 
       # ---------------------------
+      - name: Upload Build Log
+        if: always() && steps.build.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-log
+          path: build_output.log
+          retention-days: 10
+
+      # ---------------------------
       - name: Clean up after failed build
-        # if: failure() && steps.build.conclusion == 'failure'
         if: failure()        
         env:
           GH_TOKEN: ${{ github.token }}
