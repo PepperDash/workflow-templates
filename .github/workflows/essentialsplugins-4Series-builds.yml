@@ -106,6 +106,17 @@ jobs:
             exit $LASTEXITCODE
           }   
 
+          
+      # ---------------------------
+      - name: Upload Build Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-log
+          path: build-output.log
+          retention-days: 30
+      
+      
       # ---------------------------
       - name: Clean up after failed build
         if: failure()
@@ -151,17 +162,6 @@ jobs:
           }
                     
           exit 1
-      
-
-      # ---------------------------
-      - name: Upload Build Output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-log
-          path: build-output.log
-          retention-days: 30
-      
 
       # ---------------------------
       - name: Check Package Name
