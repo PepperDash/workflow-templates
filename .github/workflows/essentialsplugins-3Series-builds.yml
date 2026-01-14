@@ -313,7 +313,15 @@ jobs:
               $oldName = $_.Name
               $baseName = $_.BaseName
               $extension = $_.Extension # Includes the dot (.)
-              $newName = "$baseName.$version$extension" -Replace '.3Series', ''
+              
+              # Check if the base name contains ".3Series" or ".3series"
+              if ($baseName -match '(.+)\.3[Ss]eries$') {
+                  # Insert version before the .3Series suffix
+                  $newName = "$($Matches[1]).$version.3Series$extension"
+              } else {
+                  # Normal renaming for files without .3Series
+                  $newName = "$baseName.$version$extension"
+              }
                         
               Write-Output "- '$oldName' to '$newName'"    
               Rename-Item -Path $_.FullName -NewName $newName -Force 
