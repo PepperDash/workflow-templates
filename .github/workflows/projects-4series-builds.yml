@@ -29,7 +29,7 @@ jobs:
     steps:
       # Checkout the source repo
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         
       # Get SLN Info
       - name: Get SLN Info
