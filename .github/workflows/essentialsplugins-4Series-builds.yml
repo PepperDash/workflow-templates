@@ -212,7 +212,7 @@ jobs:
       - name: Get release notes
         if: success() && inputs.newVersion == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: change-log
 

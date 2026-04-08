@@ -258,7 +258,7 @@ jobs:
     runs-on: windows-2019
     steps:
       - name: Download Build Version Info
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: Version
 
@@ -313,7 +313,7 @@ jobs:
           echo $nuspecContent > ${{ github.workspace }}\project.nuspec
   
       - name: Download Build output
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: Build
           path: ./
