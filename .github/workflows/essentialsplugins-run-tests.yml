@@ -1,0 +1,21 @@
+name: Test PepperDash Essentials
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  runTests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 9.0.x
+    - name: Restore dependencies
+      working-directory: .
+      run: dotnet restore
+    - name: Test
+      working-directory: .
+      run: dotnet test --verbosity normal --no-restore --collect:"xplat code coverage"
