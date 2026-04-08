@@ -23,33 +23,10 @@ on:
         description: 'Set to true to bypass the package name check.'
         required: false
         type: boolean
-  # workflow_dispatch:
-  #   inputs:
-  #     newVersion:
-  #       description: 'New version?'
-  #       required: true
-  #       type: string
-  #       default: 'false'
-  #     version:
-  #       description: 'The version of the file to build and push.'
-  #       required: true
-  #       type: string
-  #       default: '1.0.0'
-  #     tag:
-  #       description: 'The tag of the image to build and push.'
-  #       required: true
-  #       type: string
-  #       default: 'v1.0.0'
-  #     channel:
-  #       description: 'The channel of the image to build and push.'
-  #       required: true
-  #       type: string
-  #       default: ''
-  #     bypassPackageCheck:
-  #       description: 'Set to true to bypass the package name check.'
-  #       required: false
-  #       type: boolean
-  #       default: false
+      devToolsVersion:
+        description: 'Version tag of essentials-devtools release to embed in the CPZ (e.g. v1.0.0). Leave empty to skip.'
+        required: false
+        type: string
       
 env:
   BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
@@ -206,6 +183,42 @@ jobs:
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***Failed***`n$msg`n"
             exit 1
           }
+
+      # ---------------------------
+      - name: Download essentials-devtools SPA
+        if: success() && inputs.devToolsVersion != ''
+        shell: powershell
+        run: |
+          $tag = "${{ inputs.devToolsVersion }}"
+          $url = "https://github.com/PepperDash/essentials-devtools/releases/download/$tag/essentials-devtools-$tag.zip"
+          Write-Output "Downloading essentials-devtools $tag from $url"
+          Invoke-WebRequest -Uri $url -OutFile "essentials-devtools.zip" -UseBasicParsing
+          Write-Output "Download complete."
+
+      # ---------------------------
+      - name: Embed SPA zip into CPZ
+        if: success() && inputs.devToolsVersion != ''
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $spaZip = (Resolve-Path "essentials-devtools.zip").Path
+          $cpzFiles = Get-ChildItem -Recurse -Path (Join-Path $env:GITHUB_WORKSPACE "output") -Filter "*.cpz"
+          foreach ($cpzFile in $cpzFiles) {
+            Write-Output "Embedding SPA zip into $($cpzFile.FullName)"
+            $zip = [System.IO.Compression.ZipFile]::Open($cpzFile.FullName, [System.IO.Compression.ZipArchiveMode]::Update)
+            try {
+              [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zip,
+                $spaZip,
+                "essentials-devtools.zip",
+                [System.IO.Compression.CompressionLevel]::NoCompression
+              ) | Out-Null
+              Write-Output "Done: $($cpzFile.Name)"
+            } finally {
+              $zip.Dispose()
+            }
+          }a
       
       # ---------------------------
       # Create the release on the source repo  
