@@ -1,9 +1,7 @@
 name: Test PepperDash Essentials
 
 on:
-  push:
-    branches:
-      - '**'
+  workflow_call:
 
 jobs:
   runTests:
