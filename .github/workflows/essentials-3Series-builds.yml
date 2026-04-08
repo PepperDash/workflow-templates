@@ -93,7 +93,7 @@ jobs:
       
       # Login to Docker
       - name: Login to Docker
-        uses: azure/docker-login@v1
+        uses: azure/docker-login@v2
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
