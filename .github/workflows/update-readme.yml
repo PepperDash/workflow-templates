@@ -17,14 +17,14 @@ jobs:
 
     steps:
       - name: Checkout Caller Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.target-branch }}
           fetch-depth: 0
           path: repo
 
       - name: Checkout Workflow Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
         with:
           repository: PepperDash/workflow-templates
           ref: main
