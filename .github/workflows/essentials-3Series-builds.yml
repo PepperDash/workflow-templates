@@ -288,7 +288,7 @@ jobs:
       # Pulls the nuget builder packages
       - name: Add nuget.exe
         if: ${{ !contains( env.NUSPEC_FILE, 'EssentialsPluginTemplate' ) }}
-        uses: nuget/setup-nuget@v2        
+        uses: nuget/setup-nuget@v4        
       
         # Creating nuget Packages
       - name: Create nuget package
