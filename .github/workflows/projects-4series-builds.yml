@@ -60,7 +60,7 @@ jobs:
 
       # Upload compiled .cpz files
       - name: Upload Compiled .cpz Files
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v7
         with:
           name: compiled-cpz-files
           path: '**/*.cpz'

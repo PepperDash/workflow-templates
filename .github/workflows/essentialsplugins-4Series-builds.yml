@@ -87,7 +87,7 @@ jobs:
       # ---------------------------
       - name: Upload Build Output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-output-log
           path: build-output.log
