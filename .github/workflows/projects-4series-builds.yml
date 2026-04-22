@@ -48,7 +48,7 @@ jobs:
 
       # Setup MS Build
       - name: Setup MS Build
-        uses: microsoft/setup-msbuild@v1.3
+        uses: microsoft/setup-msbuild@v3
 
       # Restore Nuget Packages
       - name: Restore Nuget Packages
