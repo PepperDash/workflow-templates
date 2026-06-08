@@ -59,23 +59,34 @@ jobs:
       # GITHUB_TOKEN — needed when the dependency package is owned by a different repo, because
       # GITHUB_TOKEN is scoped to the calling repo only. Falls back to GITHUB_TOKEN for packages
       # published by the same repo or when no PAT is configured. No-op unless the repo opts in by
-      # declaring the "github.com/orgs/<owner>" source in its own nuget.config.
+      # declaring a "https://nuget.pkg.github.com/<owner>" source in its own nuget.config.
+      #
+      # The source is matched by URL and updated using its EXACT configured name (its `key`),
+      # written back to the same nuget.config via --configfile. Reconstructing the name from
+      # github.repository_owner (e.g. "PepperDash") would store the credential under a different
+      # casing than the source key (e.g. "github.com/orgs/pepperdash"); NuGet then can't match
+      # credentials to the source at restore time and the request goes out anonymous → 401.
       - name: Authenticate GitHub Packages NuGet feed (if repo opts in)
         shell: powershell
         env:
           PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
         run: |
-          $owner = "${{ github.repository_owner }}"
-          $name  = "github.com/orgs/$owner"
-          $sources = dotnet nuget list source
-          if ($sources -match [regex]::Escape($name)) {
-            $token = if ($env:PACKAGES_PAT) { $env:PACKAGES_PAT } else { "${{ secrets.GITHUB_TOKEN }}" }
-            $tokenType = if ($env:PACKAGES_PAT) { "PACKAGES_PAT" } else { "GITHUB_TOKEN" }
-            dotnet nuget update source "$name" --username "${{ github.actor }}" --password $token --store-password-in-clear-text
-            Write-Output "Authenticated NuGet source '$name' using $tokenType."
-          } else {
-            Write-Output "NuGet source '$name' not declared by this repo; skipping (dependencies resolve from nuget.org)."
+          $cfg = Get-ChildItem -Path . -Filter "nuget.config" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $cfg) {
+            Write-Output "No nuget.config found; skipping (dependencies resolve from nuget.org)."
+            exit 0
           }
+          [xml]$xml = Get-Content $cfg.FullName
+          $src = $xml.configuration.packageSources.add | Where-Object { $_.value -like "*nuget.pkg.github.com*" } | Select-Object -First 1
+          if (-not $src) {
+            Write-Output "No GitHub Packages source in $($cfg.FullName); skipping (dependencies resolve from nuget.org)."
+            exit 0
+          }
+          $srcName = $src.key
+          $token = if ($env:PACKAGES_PAT) { $env:PACKAGES_PAT } else { "${{ secrets.GITHUB_TOKEN }}" }
+          $tokenType = if ($env:PACKAGES_PAT) { "PACKAGES_PAT" } else { "GITHUB_TOKEN" }
+          dotnet nuget update source "$srcName" --username "${{ github.actor }}" --password $token --store-password-in-clear-text --configfile $cfg.FullName
+          Write-Output "Authenticated NuGet source '$srcName' in $($cfg.FullName) using $tokenType."
 
       # ---------------------------
       - name: Build Solution
