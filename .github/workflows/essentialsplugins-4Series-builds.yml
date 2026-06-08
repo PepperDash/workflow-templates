@@ -55,18 +55,24 @@ jobs:
 
       # ---------------------------
       # Authenticate the org's GitHub Packages NuGet feed so the build's restore can read INTERNAL
-      # org packages (e.g. PepperDash.ZoomRoom.Sdk) with the workflow's GITHUB_TOKEN. No-op unless the
-      # repo opts in by declaring the "github.com/orgs/<owner>" source in its own nuget.config — so it
-      # does not change behavior for plugins whose dependencies all resolve from nuget.org.
+      # org packages. Prefers PACKAGES_PAT (repo secret, classic PAT with read:packages) over
+      # GITHUB_TOKEN — needed when the dependency package is owned by a different repo, because
+      # GITHUB_TOKEN is scoped to the calling repo only. Falls back to GITHUB_TOKEN for packages
+      # published by the same repo or when no PAT is configured. No-op unless the repo opts in by
+      # declaring the "github.com/orgs/<owner>" source in its own nuget.config.
       - name: Authenticate GitHub Packages NuGet feed (if repo opts in)
         shell: powershell
+        env:
+          PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
         run: |
           $owner = "${{ github.repository_owner }}"
           $name  = "github.com/orgs/$owner"
           $sources = dotnet nuget list source
           if ($sources -match [regex]::Escape($name)) {
-            dotnet nuget update source "$name" --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text
-            Write-Output "Added GITHUB_TOKEN credentials to NuGet source '$name'."
+            $token = if ($env:PACKAGES_PAT) { $env:PACKAGES_PAT } else { "${{ secrets.GITHUB_TOKEN }}" }
+            $tokenType = if ($env:PACKAGES_PAT) { "PACKAGES_PAT" } else { "GITHUB_TOKEN" }
+            dotnet nuget update source "$name" --username "${{ github.actor }}" --password $token --store-password-in-clear-text
+            Write-Output "Authenticated NuGet source '$name' using $tokenType."
           } else {
             Write-Output "NuGet source '$name' not declared by this repo; skipping (dependencies resolve from nuget.org)."
           }
