@@ -178,7 +178,6 @@ jobs:
       # ---------------------------
       - name: Check Package Name
         if: success()
-        continue-on-error: true
         shell: powershell
         run: |
           if ("${{ inputs.bypassPackageCheck }}" -eq "true") {
@@ -259,7 +258,6 @@ jobs:
       # Create the release on the source repo  
       - name: Get release notes
         if: success() && inputs.newVersion == 'true'
-        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: change-log
@@ -268,7 +266,6 @@ jobs:
       # Upload the release to the source repo
       - name: Upload Release
         if: success() && inputs.newVersion == 'true'
-        continue-on-error: true
         id: create_release
         uses: ncipollo/release-action@v1
         with:
@@ -283,7 +280,6 @@ jobs:
       # Publish to GitHub Packages NuGet feed
       - name: Publish to GitHub Package Registry
         if: success() && inputs.newVersion == 'true'
-        continue-on-error: true
         run: |
           if (-not (Test-Path -Path ".\output\*.nupkg")) {
             $msg = "No NuGet package found in the output directory. Check if the build process created the package correctly."
@@ -309,7 +305,6 @@ jobs:
       # Publish to Nuget.org (public repos only)
       - name: Publish to Nuget.org (public repos only)
         if: success() && inputs.newVersion == 'true'
-        continue-on-error: true
         run: |
           $owner = "${{ github.repository_owner }}"
           $visibility = "${{ github.event.repository.visibility }}"
