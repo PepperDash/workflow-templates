@@ -56,7 +56,16 @@ jobs:
         include: '.releaserc.json'
     - name: Get version number
       id: get_version
-      run: npx --package=semantic-release --package=@semantic-release/commit-analyzer --package=@semantic-release/release-notes-generator --package=@semantic-release/changelog --package=@semantic-release/exec --package=conventional-changelog-conventionalcommits -- semantic-release
+      # conventional-changelog-conventionalcommits is pinned to 9. From 10.0.0 it depends on
+      # @conventional-changelog/template, and template 1.4.0 (published 2026-08-18) refuses to
+      # render unless the loaded writer is >= 9 - it ships a main template of
+      # "{{[<preset> requires conventional-changelog-writer@9 or newer...]}}", so Handlebars fails
+      # with `Missing helper: "<that sentence>"`. @semantic-release/release-notes-generator@14.1.1
+      # still depends on conventional-changelog-writer ^8, so any repo whose .releaserc.json asks
+      # for the conventionalcommits preset broke overnight with no change on either side. 9.3.1 has
+      # no @conventional-changelog/template dependency at all, so there is no guard to trip.
+      # Revisit when release-notes-generator moves to writer >= 9.
+      run: npx --package=semantic-release --package=@semantic-release/commit-analyzer --package=@semantic-release/release-notes-generator --package=@semantic-release/changelog --package=@semantic-release/exec --package=conventional-changelog-conventionalcommits@9 -- semantic-release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN}}
     - name: Print summary if no new version
