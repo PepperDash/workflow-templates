@@ -21,12 +21,54 @@ runs:
       uses: nuget/setup-nuget@v4
 
     - name: nuget pack
-      if: ${{ !contains(inputs.nuspec-file, 'EssentialsPluginTemplate') }}
       shell: pwsh
       run: |
-        $filePath = ".\${{ inputs.nuspec-file }}.nuspec"
-        if (-not (Test-Path -Path $filePath)) {
-          Write-Error "NuGet nuspec file '$filePath' not found. Check if the build produced it."
+        $ErrorActionPreference = 'Stop'
+        $summary = $env:GITHUB_STEP_SUMMARY
+        try {
+          Add-Content -Path $summary -Value "## Pack NuGet Package`n"
+
+          $nuspec = "${{ inputs.nuspec-file }}"
+          if ([string]::IsNullOrWhiteSpace($nuspec)) {
+            $err = "No nuspec file name supplied. Did create-nuspec run and set an output?"
+            Write-Error $err
+            Add-Content -Path $summary -Value "❌ $err`n"
+            exit 1
+          }
+          if ($nuspec -like '*EssentialsPluginTemplate*') {
+            Add-Content -Path $summary -Value "Skipped — template repo (``$nuspec``).`n"
+            Write-Output "Template repo; skipping nuget pack."
+            exit 0
+          }
+
+          $filePath = ".\$nuspec.nuspec"
+          if (-not (Test-Path -Path $filePath)) {
+            $err = "NuGet nuspec file '$filePath' not found. Check that the build produced it."
+            Write-Error $err
+            Add-Content -Path $summary -Value "❌ $err`n"
+            exit 1
+          }
+
+          nuget pack $filePath -version ${{ inputs.version }} -OutputDirectory .\${{ inputs.output-dir }}
+          if ($LASTEXITCODE -ne 0) {
+            $err = "nuget pack exited with code $LASTEXITCODE."
+            Write-Error $err
+            Add-Content -Path $summary -Value "❌ $err`n"
+            exit $LASTEXITCODE
+          }
+
+          $pkgs = Get-ChildItem -Path .\${{ inputs.output-dir }} -Recurse -Filter *.nupkg
+          if ($pkgs.Count -eq 0) {
+            $err = "nuget pack reported success but no .nupkg was produced."
+            Write-Error $err
+            Add-Content -Path $summary -Value "❌ $err`n"
+            exit 1
+          }
+          $pkgs | ForEach-Object { Add-Content -Path $summary -Value "- $($_.Name)`n" }
+        }
+        catch {
+          $err = "pack-nuget failed: $($_.Exception.Message)"
+          Write-Error $err
+          Add-Content -Path $summary -Value "❌ $err`n"
           exit 1
         }
-        nuget pack $filePath -version ${{ inputs.version }} -OutputDirectory .\${{ inputs.output-dir }}

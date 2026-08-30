@@ -17,36 +17,50 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
       run: |
-        function Update-SourceVersion {
-          Param ([string]$Version)
-          $baseVersion = [regex]::Match($Version, "(\d+.\d+.\d+).*").captures.groups[1].value
-          $NewAssemblyVersion = 'AssemblyVersion("' + $baseVersion + '.*")'
-          Write-Output "AssemblyVersion = $NewAssemblyVersion"
-          $NewAssemblyInformationalVersion = 'AssemblyInformationalVersion("' + $Version + '")'
-          Write-Output "AssemblyInformationalVersion = $NewAssemblyInformationalVersion"
-          foreach ($o in $input) {
-            Write-Output $o.FullName
-            $TmpFile = $o.FullName + ".tmp"
-            Get-Content $o.FullName |
-              ForEach-Object { $_ -replace 'AssemblyVersion\(".*"\)', $NewAssemblyVersion } |
-              ForEach-Object { $_ -replace 'AssemblyInformationalVersion\(".*"\)', $NewAssemblyInformationalVersion } > $TmpFile
-            Move-Item $TmpFile $o.FullName -Force
-          }
-        }
+        $ErrorActionPreference = 'Stop'
+        $summary = $env:GITHUB_STEP_SUMMARY
+        try {
+          Add-Content -Path $summary -Value "## Update Assembly Info`n"
 
-        function Update-AllAssemblyInfoFiles ($version) {
+          if ([string]::IsNullOrWhiteSpace($env:VERSION)) {
+            throw "No version supplied."
+          }
+          $r = [System.Text.RegularExpressions.Regex]::Match($env:VERSION, "\d+\.\d+\.\d+.*")
+          if (-not $r.Success) {
+            throw "Input version '$($env:VERSION)' does not match x.y.z format."
+          }
+
+          function Update-SourceVersion {
+            Param ([string]$Version)
+            $baseVersion = [regex]::Match($Version, "(\d+.\d+.\d+).*").captures.groups[1].value
+            $NewAssemblyVersion = 'AssemblyVersion("' + $baseVersion + '.*")'
+            $NewAssemblyInformationalVersion = 'AssemblyInformationalVersion("' + $Version + '")'
+            foreach ($o in $input) {
+              Write-Output "  $($o.FullName)"
+              $TmpFile = $o.FullName + ".tmp"
+              Get-Content $o.FullName |
+                ForEach-Object { $_ -replace 'AssemblyVersion\(".*"\)', $NewAssemblyVersion } |
+                ForEach-Object { $_ -replace 'AssemblyInformationalVersion\(".*"\)', $NewAssemblyInformationalVersion } > $TmpFile
+              Move-Item $TmpFile $o.FullName -Force
+            }
+          }
+
+          $count = 0
           foreach ($file in "AssemblyInfo.cs", "AssemblyInfo.vb") {
-            Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse | Where-Object { $_.Name -eq $file } | Update-SourceVersion $version
+            $found = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse | Where-Object { $_.Name -eq $file }
+            $count += @($found).Count
+            $found | Update-SourceVersion $env:VERSION
+          }
+
+          if ($count -eq 0) {
+            Add-Content -Path $summary -Value "⚠️ No AssemblyInfo.cs / AssemblyInfo.vb files found.`n"
+          } else {
+            Add-Content -Path $summary -Value "- Updated $count AssemblyInfo file(s) to ``$($env:VERSION)``.`n"
           }
         }
-
-        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Update Assembly Info`n"
-        $r = [System.Text.RegularExpressions.Regex]::Match($env:VERSION, "\d+\.\d+\.\d+.*")
-        if ($r.Success) {
-          Write-Output "Updating Assembly Version to $env:VERSION" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Update-AllAssemblyInfoFiles $env:VERSION
-        }
-        else {
-          Write-Output "Error: Input version $env:VERSION does not match x.y.z format!" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Write-Output "Unable to apply version to AssemblyInfo.cs files" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+        catch {
+          $err = "update-assembly-info failed: $($_.Exception.Message)"
+          Write-Error $err
+          Add-Content -Path $summary -Value "❌ $err`n"
+          exit 1
         }

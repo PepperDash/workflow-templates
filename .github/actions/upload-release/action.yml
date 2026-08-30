@@ -26,6 +26,16 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "## Upload Release" >> "$GITHUB_STEP_SUMMARY"
+        if [ -z "${{ inputs.tag }}" ]; then
+          echo "❌ upload-release: no tag supplied." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
+
     - name: Get release notes
       if: inputs.download-change-log == 'true'
       continue-on-error: true
@@ -33,7 +43,18 @@ runs:
       with:
         name: change-log
 
+    - name: Ensure a body file exists
+      shell: bash
+      run: |
+        set -euo pipefail
+        body="${{ inputs.body-file }}"
+        if [ ! -f "$body" ]; then
+          echo "⚠️ ${body} not found; creating a placeholder." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Release ${{ inputs.tag }}" > "$body"
+        fi
+
     - name: Upload release
+      id: release
       uses: ncipollo/release-action@v1
       with:
         allowUpdates: true
@@ -42,3 +63,14 @@ runs:
         tag: ${{ inputs.tag }}
         commit: ${{ github.sha }}
         bodyFile: ${{ inputs.body-file }}
+
+    - name: Report
+      if: always()
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ steps.release.outcome }}" = "success" ]; then
+          echo "- Release \`${{ inputs.tag }}\` uploaded." >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "❌ Release \`${{ inputs.tag }}\` upload failed (${{ steps.release.outcome }})." >> "$GITHUB_STEP_SUMMARY"
+        fi

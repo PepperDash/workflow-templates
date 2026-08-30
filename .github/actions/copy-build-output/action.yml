@@ -25,15 +25,14 @@ inputs:
     default: 'false'
   bin-filter:
     description: >
-      Regex fragment the artifact full path must match. "bin" matches any bin dir;
-      "bin-config" restricts to \bin\<build-type>\.
+      "bin" matches any bin dir; "bin-config" restricts to \bin\<build-type>\.
     required: false
     default: 'bin-config'
   rename-mode:
     description: >
       "all" renames every collected artifact/.dll (plugin). "essentials" renames
       only PepperDashEssentials / PepperDashCore / PepperDash_Core and strips the
-      ".3Series" moniker.
+      ".3Series" moniker; other files (incl. .dll) keep their names.
     required: false
     default: 'all'
   copy-nuspec:
@@ -47,81 +46,115 @@ runs:
     - name: Copy and rename output
       shell: pwsh
       run: |
-        $sourceDir = "$env:GITHUB_WORKSPACE"
-        $destinationDir = Join-Path $sourceDir "output"
-        $version = "${{ inputs.version }}"
-        $package = "${{ inputs.package }}"
-        $validExtensions = "${{ inputs.extensions }}".Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
-        if ("${{ inputs.include-dll }}" -eq "true") { $validExtensions += ".dll" }
-        $includePatterns = $validExtensions | ForEach-Object { "*$_" }
+        $ErrorActionPreference = 'Stop'
+        $summary = $env:GITHUB_STEP_SUMMARY
+        try {
+          Add-Content -Path $summary -Value "## Copy build output files`n"
 
-        if ("${{ inputs.bin-filter }}" -eq "bin-config") {
-          $binRegex = "\\bin\\${{ inputs.build-type }}"
-        } else {
-          $binRegex = "\\bin\\"
-        }
+          $sourceDir = "$env:GITHUB_WORKSPACE"
+          $destinationDir = Join-Path $sourceDir "output"
+          $version = "${{ inputs.version }}"
+          $package = "${{ inputs.package }}"
+          $renameMode = "${{ inputs.rename-mode }}"
 
-        Write-Output "Extensions: $($validExtensions -join ', ')"
-        Write-Output "Bin filter: $binRegex"
-        Write-Output "Version:    $version"
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "No version supplied." }
 
-        if (Test-Path -Path $destinationDir) {
-          Get-ChildItem -Path $destinationDir | Remove-Item -Force -Recurse
-        } else {
-          New-Item -ItemType Directory -Force -Path $destinationDir | Out-Null
-        }
+          $validExtensions = "${{ inputs.extensions }}".Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
+          if ($validExtensions.Count -eq 0) { throw "No artifact extensions supplied." }
+          if ("${{ inputs.include-dll }}" -eq "true") { $validExtensions += ".dll" }
+          $includePatterns = $validExtensions | ForEach-Object { "*$_" }
 
-        if ("${{ inputs.copy-nuspec }}" -eq "true") {
-          Get-ChildItem -Path $sourceDir -Recurse -Filter *.nuspec | ForEach-Object {
-            Write-Output "Copying $($_.Name) to repo root"
-            Copy-Item $_.FullName -Destination .\ -Force
-            "NUSPEC_FILE=$($_.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ("${{ inputs.bin-filter }}" -eq "bin-config") {
+            $binRegex = "\\bin\\${{ inputs.build-type }}"
+          } else {
+            $binRegex = "\\bin\\"
           }
-        }
 
-        $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object {
-          -not $_.FullName.Contains("\packages\") -and $_.FullName -match $binRegex
-        }
+          Write-Output "Extensions: $($validExtensions -join ', ')  Bin filter: $binRegex  Version: $version"
 
-        $allFilesToCopy = @()
-        foreach ($file in $filesToCopy) {
-          $allFilesToCopy += $file
-          $allFilesToCopy += Get-ChildItem -Path $sourceDir -Recurse | Where-Object {
-            ($_.BaseName -eq $file.BaseName -or ($package -ne '' -and $_.BaseName -eq $package)) -and $_.Extension -eq ".dll"
+          if (Test-Path -Path $destinationDir) {
+            Get-ChildItem -Path $destinationDir -Recurse | Remove-Item -Force -Recurse
+          } else {
+            New-Item -ItemType Directory -Force -Path $destinationDir | Out-Null
           }
-        }
-        $allFilesToCopy = $allFilesToCopy | Sort-Object FullName -Unique
 
-        Write-Output "Copying $($allFilesToCopy.Count) file(s) to $destinationDir"
-        $allFilesToCopy | ForEach-Object { Copy-Item $_.FullName -Destination $destinationDir -Force }
+          if ("${{ inputs.copy-nuspec }}" -eq "true") {
+            Get-ChildItem -Path $sourceDir -Recurse -Filter *.nuspec | ForEach-Object {
+              Write-Output "Copying $($_.Name) to repo root"
+              Copy-Item $_.FullName -Destination .\ -Force
+              "NUSPEC_FILE=$($_.BaseName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
 
-        $renameExtensions = $validExtensions
-        if ($renameExtensions -notcontains ".dll") { $renameExtensions += ".dll" }
+          $filesToCopy = Get-ChildItem -Path $sourceDir -Recurse -Include $includePatterns | Where-Object {
+            -not $_.FullName.Contains("\packages\") -and $_.FullName -match $binRegex
+          }
 
-        Get-ChildItem -Path $destinationDir | Where-Object { $renameExtensions -contains $_.Extension } | ForEach-Object {
-          $oldName = $_.Name
-          $baseName = $_.BaseName
-          $extension = $_.Extension
+          if (@($filesToCopy).Count -eq 0) {
+            $err = "No build artifacts ($($validExtensions -join ', ')) found under a path matching '$binRegex'. Did the build succeed?"
+            Write-Error $err
+            Add-Content -Path $summary -Value "❌ $err`n"
+            exit 1
+          }
 
-          if ("${{ inputs.rename-mode }}" -eq "essentials") {
-            if ($baseName -match "PepperDashEssentials" -or $baseName -match "PepperDashCore" -or $baseName -match "PepperDash_Core") {
-              $newName = ("$baseName.$version$extension" -replace '\.3Series', '')
+          $allFilesToCopy = @()
+          foreach ($file in $filesToCopy) {
+            $allFilesToCopy += $file
+            $allFilesToCopy += Get-ChildItem -Path $sourceDir -Recurse | Where-Object {
+              ($_.BaseName -eq $file.BaseName -or ($package -ne '' -and $_.BaseName -eq $package)) -and $_.Extension -eq ".dll"
+            }
+          }
+          $allFilesToCopy = $allFilesToCopy | Sort-Object FullName -Unique
+
+          Write-Output "Copying $($allFilesToCopy.Count) file(s) to $destinationDir"
+          $allFilesToCopy | ForEach-Object { Copy-Item $_.FullName -Destination $destinationDir -Force }
+
+          # Which extensions get renamed. In "essentials" mode the DLLs keep their
+          # names (matching the legacy essentials-3Series behaviour); only the
+          # core .cpz/.clz are versioned.
+          $renameExtensions = @($validExtensions)
+          if ($renameMode -eq 'all' -and $renameExtensions -notcontains ".dll") {
+            $renameExtensions += ".dll"
+          }
+          if ($renameMode -eq 'essentials') {
+            $renameExtensions = $renameExtensions | Where-Object { $_ -ne ".dll" }
+          }
+
+          Get-ChildItem -Path $destinationDir | Where-Object { $renameExtensions -contains $_.Extension } | ForEach-Object {
+            $oldName = $_.Name
+            $baseName = $_.BaseName
+            $extension = $_.Extension
+
+            if ($renameMode -eq "essentials") {
+              if ($baseName -match "PepperDashEssentials" -or $baseName -match "PepperDashCore" -or $baseName -match "PepperDash_Core") {
+                $newName = ("$baseName.$version$extension" -replace '\.3Series', '')
+                Write-Output "- '$oldName' -> '$newName'"
+                Rename-Item -Path $_.FullName -NewName $newName -Force
+              }
+            }
+            else {
+              if ($baseName -match '(.+)\.3[Ss]eries$') {
+                $newName = "$($Matches[1]).$version.3Series$extension"
+              } else {
+                $newName = "$baseName.$version$extension"
+              }
               Write-Output "- '$oldName' -> '$newName'"
               Rename-Item -Path $_.FullName -NewName $newName -Force
             }
           }
-          else {
-            if ($baseName -match '(.+)\.3[Ss]eries$') {
-              $newName = "$($Matches[1]).$version.3Series$extension"
-            } else {
-              $newName = "$baseName.$version$extension"
-            }
-            Write-Output "- '$oldName' -> '$newName'"
-            Rename-Item -Path $_.FullName -NewName $newName -Force
-          }
-        }
 
-        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Copy build output files`n"
-        Get-ChildItem -Path $destinationDir | ForEach-Object {
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($_.Name)`n"
+          $final = Get-ChildItem -Path $destinationDir
+          if (@($final).Count -eq 0) {
+            $err = "Nothing was copied to $destinationDir."
+            Write-Error $err
+            Add-Content -Path $summary -Value "❌ $err`n"
+            exit 1
+          }
+          $final | ForEach-Object { Add-Content -Path $summary -Value "- $($_.Name)`n" }
+        }
+        catch {
+          $err = "copy-build-output failed: $($_.Exception.Message)"
+          Write-Error $err
+          Add-Content -Path $summary -Value "❌ $err`n"
+          exit 1
         }

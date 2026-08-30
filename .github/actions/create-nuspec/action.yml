@@ -1,6 +1,9 @@
 name: Create nuspec
 description: >
   Generates a .nuspec for a plugin repo (no-op when repo-is-plugin is not "true").
+  The package embeds: assembly name, repository URL (projectUrl + <repository>), and
+  — for C# Essentials plugins — the factory TypeNames and
+  MinimumEssentialsFrameworkVersion.
 
 inputs:
   package:
@@ -13,13 +16,29 @@ inputs:
     description: 'Package version.'
     required: true
   repo-name:
-    description: 'Repository name (used as the description).'
+    description: 'Repository name (used in the description).'
     required: true
   repo-is-plugin:
     description: 'Only generate when "true".'
     required: true
+  assembly-name:
+    description: 'Primary built assembly base name (from get-plugin-metadata).'
+    required: false
+    default: ''
+  type-names:
+    description: 'Space-separated factory TypeNames (from get-plugin-metadata).'
+    required: false
+    default: ''
+  type-names-list:
+    description: 'Comma+space separated factory TypeNames for readable text.'
+    required: false
+    default: ''
+  min-framework-version:
+    description: 'MinimumEssentialsFrameworkVersion (from get-plugin-metadata).'
+    required: false
+    default: ''
   tags:
-    description: 'Space-separated <tags> value.'
+    description: 'Base space-separated <tags> value (TypeNames are appended).'
     required: false
     default: 'crestron'
   license-type:
@@ -31,7 +50,7 @@ inputs:
     required: false
     default: 'LICENSE.md'
   target-framework:
-    description: 'lib\<tfm> target for the output payload, e.g. net35 / net47 / net8.0.'
+    description: 'lib\<tfm> target for the payload, e.g. net35 / net47 / net8.0.'
     required: false
     default: 'net35'
 
@@ -47,15 +66,67 @@ runs:
       id: gen
       shell: pwsh
       run: |
-        if ("${{ inputs.repo-is-plugin }}" -ne "true") {
-          Write-Output "repo-is-plugin != true; skipping nuspec generation."
-          exit 0
-        }
+        $ErrorActionPreference = 'Stop'
+        $summary = $env:GITHUB_STEP_SUMMARY
+        try {
+          Add-Content -Path $summary -Value "## Create Nuspec File`n"
 
-        Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
-        $year = (Get-Date).Year
+          if ("${{ inputs.repo-is-plugin }}" -ne "true") {
+            Add-Content -Path $summary -Value "Skipped — repo-is-plugin is not ``true``.`n"
+            Write-Output "repo-is-plugin != true; skipping nuspec generation."
+            "nuspec-file=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
 
-        $nuspecContent = @"
+          $repoUrl = "https://github.com/${{ github.repository }}"
+          $assemblyName = "${{ inputs.assembly-name }}"
+          $typeNames = "${{ inputs.type-names }}"
+          $typeNamesList = "${{ inputs.type-names-list }}"
+          $minFw = "${{ inputs.min-framework-version }}"
+          $year = (Get-Date).Year
+
+          # Tags = base tags + tfm + factory TypeNames (deduped, space-delimited).
+          $tagList = @()
+          $tagList += "${{ inputs.tags }}".Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+          if ($typeNames -ne '') { $tagList += $typeNames.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries) }
+          $tags = ($tagList | Select-Object -Unique) -join ' '
+
+          # Description carries the structured metadata NuGet has no native field for.
+          $descLines = @("${{ inputs.repo-name }}")
+          if ($assemblyName -ne '') { $descLines += "Assembly: $assemblyName" }
+          $descLines += "Repository: $repoUrl"
+          if ($typeNamesList -ne '') { $descLines += "Factory TypeNames: $typeNamesList" }
+          if ($minFw -ne '') { $descLines += "MinimumEssentialsFrameworkVersion: $minFw" }
+          $description = [System.Security.SecurityElement]::Escape(($descLines -join "`n"))
+
+          $releaseNotes = ''
+          if ($typeNamesList -ne '') { $releaseNotes = [System.Security.SecurityElement]::Escape("Factory TypeNames: $typeNamesList") }
+
+          Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
+
+          # Only reference files that actually exist so `nuget pack` doesn't fail.
+          $fileEntries = @("        <file src='.\output\**' target='lib\${{ inputs.target-framework }}'/>")
+          foreach ($extra in 'LICENSE.md', 'README.md') {
+            if (Test-Path -Path (Join-Path $env:GITHUB_WORKSPACE $extra)) {
+              $fileEntries += "        <file src='$extra' target=''/>"
+            } else {
+              Add-Content -Path $summary -Value "⚠️ $extra not found — omitted from the package.`n"
+            }
+          }
+          $filesBlock = $fileEntries -join "`n"
+
+          $licenseLine = ''
+          if ("${{ inputs.license-type }}" -eq 'file') {
+            if (Test-Path -Path (Join-Path $env:GITHUB_WORKSPACE "${{ inputs.license-value }}")) {
+              $licenseLine = "        <license type='file'>${{ inputs.license-value }}</license>"
+            } else {
+              Add-Content -Path $summary -Value "⚠️ license file ${{ inputs.license-value }} not found — omitted.`n"
+            }
+          } else {
+            $licenseLine = "        <license type='expression'>${{ inputs.license-value }}</license>"
+          }
+
+          $nuspecContent = @"
         <?xml version='1.0' encoding='utf-8'?>
         <package>
             <metadata>
@@ -65,24 +136,37 @@ runs:
                 <authors>PepperDash Technology</authors>
                 <owners>PepperDash</owners>
                 <requireLicenseAcceptance>false</requireLicenseAcceptance>
-                <license type='${{ inputs.license-type }}'>${{ inputs.license-value }}</license>
-                <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
+        $licenseLine
+                <projectUrl>$repoUrl</projectUrl>
                 <copyright>Copyright $year</copyright>
-                <description>${{ inputs.repo-name }}</description>
-                <tags>${{ inputs.tags }}</tags>
-                <repository type='git' url='https://github.com/${{ github.repository }}'/>
+                <description>$description</description>
+                <releaseNotes>$releaseNotes</releaseNotes>
+                <tags>$tags</tags>
+                <repository type='git' url='$repoUrl'/>
             </metadata>
             <files>
-                <file src='LICENSE.md' target=''/>
-                <file src='README.md' target=''/>
-                <file src='.\output\**' target='lib\${{ inputs.target-framework }}'/>
+        $filesBlock
             </files>
         </package>
         "@
 
-        $path = Join-Path $env:GITHUB_WORKSPACE "project.nuspec"
-        Write-Output $nuspecContent > $path
-        $nuspecFile = (Get-ChildItem *.nuspec -Recurse | Select-Object -First 1).BaseName
-        Write-Output "Nuspec File: $nuspecFile"
-        "nuspec-file=$nuspecFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        "NUSPEC_FILE=$nuspecFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $path = Join-Path $env:GITHUB_WORKSPACE "project.nuspec"
+          Set-Content -Path $path -Value $nuspecContent -Encoding utf8
+          Write-Output $nuspecContent
+
+          $nuspecFile = (Get-ChildItem *.nuspec -Recurse | Select-Object -First 1).BaseName
+          "nuspec-file=$nuspecFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "NUSPEC_FILE=$nuspecFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Add-Content -Path $summary -Value "- **Package**: ${{ inputs.package }}`n"
+          Add-Content -Path $summary -Value "- **Assembly**: $(if ($assemblyName) { $assemblyName } else { '_n/a_' })`n"
+          Add-Content -Path $summary -Value "- **Repository**: $repoUrl`n"
+          Add-Content -Path $summary -Value "- **Tags**: $tags`n"
+          if ($typeNamesList -ne '') { Add-Content -Path $summary -Value "- **Factory TypeNames**: $typeNamesList`n" }
+        }
+        catch {
+          $err = "create-nuspec failed: $($_.Exception.Message)"
+          Write-Error $err
+          Add-Content -Path $summary -Value "❌ $err`n"
+          exit 1
+        }

@@ -13,7 +13,7 @@ inputs:
     required: false
     default: 'output'
   required-owner:
-    description: 'Owner that is allowed to publish publicly (case-insensitive).'
+    description: 'Owner allowed to publish publicly (case-insensitive).'
     required: false
     default: 'pepperdash'
 
@@ -23,31 +23,52 @@ runs:
     - name: Push to NuGet.org (public PepperDash repos only)
       shell: pwsh
       run: |
-        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Nuget.org`n"
+        $ErrorActionPreference = 'Stop'
+        $summary = $env:GITHUB_STEP_SUMMARY
+        try {
+          Add-Content -Path $summary -Value "### Nuget.org`n"
 
-        $owner = "${{ github.repository_owner }}"
-        $visibility = "${{ github.event.repository.visibility }}"
-        Write-Output "Repository Owner: $owner"
-        Write-Output "Repository Visibility: $visibility"
+          $owner = "${{ github.repository_owner }}"
+          $visibility = "${{ github.event.repository.visibility }}"
+          Write-Output "Repository Owner: $owner"
+          Write-Output "Repository Visibility: $visibility"
 
-        if ($owner.ToLower() -ne "${{ inputs.required-owner }}".ToLower() -or $visibility.ToLower() -ne 'public') {
-          $msg = "Repository is not a public ${{ inputs.required-owner }} repo; skipping publish to NuGet.org."
-          Write-Warning $msg
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
-          exit 0
+          if ($owner.ToLower() -ne "${{ inputs.required-owner }}".ToLower() -or $visibility.ToLower() -ne 'public') {
+            $msg = "Repository is not a public ${{ inputs.required-owner }} repo; skipping publish to NuGet.org."
+            Write-Warning $msg
+            Add-Content -Path $summary -Value "$msg`n"
+            exit 0
+          }
+
+          $nupkgFiles = Get-ChildItem -Path .\${{ inputs.output-dir }} -Recurse -Filter *.nupkg -ErrorAction SilentlyContinue
+          if ($null -eq $nupkgFiles -or $nupkgFiles.Count -eq 0) {
+            $msg = "No .nupkg files found in .\${{ inputs.output-dir }}; nothing to publish to NuGet.org."
+            Write-Warning $msg
+            Add-Content -Path $summary -Value "⚠️ $msg`n"
+            exit 0
+          }
+
+          nuget setApiKey ${{ inputs.nuget-api-key }} -Source https://api.nuget.org/v3/index.json
+
+          $failed = @()
+          foreach ($pkg in $nupkgFiles) {
+            Write-Output "Pushing $($pkg.Name) to NuGet.org..."
+            nuget push $pkg.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
+            if ($LASTEXITCODE -ne 0) {
+              $failed += $pkg.Name
+              Add-Content -Path $summary -Value "❌ Failed to push $($pkg.Name) (exit $LASTEXITCODE)`n"
+            } else {
+              Add-Content -Path $summary -Value "- Pushed $($pkg.Name)`n"
+            }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "Failed to push: $($failed -join ', ')"
+            exit 1
+          }
         }
-
-        $nupkgFiles = Get-ChildItem -Path .\${{ inputs.output-dir }} -Recurse -Filter *.nupkg
-        if ($nupkgFiles.Count -eq 0) {
-          $msg = "No .nupkg files found in .\${{ inputs.output-dir }}."
-          Write-Error $msg
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+        catch {
+          $err = "publish-nuget-org failed: $($_.Exception.Message)"
+          Write-Error $err
+          Add-Content -Path $summary -Value "❌ $err`n"
           exit 1
         }
-
-        nuget setApiKey ${{ inputs.nuget-api-key }} -Source https://api.nuget.org/v3/index.json
-        $nupkgFiles | ForEach-Object {
-          Write-Output "Pushing $($_.Name) to NuGet.org..."
-          nuget push $_.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
-        }
-        Write-Output "Published ${{ github.repository }} to NuGet.org" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
