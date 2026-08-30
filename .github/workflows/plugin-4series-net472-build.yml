@@ -3,11 +3,17 @@ name: Plugin build — 4-Series (net472)
 # Reusable build for an Essentials plugin (EPI) targeting 4-Series / .NET Framework 4.72.
 # Composes the shared composite actions in .github/actions/.
 #
+# Tag/release safety: nothing is tagged, released, or published until the compile
+# step (dotnet-build, NOT continue-on-error) has succeeded. apply-essentials-
+# version-prefix only computes strings; upload-release and the publish steps are
+# all gated on `success()` so a build failure routes to cleanup-failed-release
+# instead. Pair with getversion.yml, which also creates no tag/release.
+#
 # Pairing requirement: use with getversion.yml (prefix-aware — it does NOT create
 # the git tag/release). This workflow applies the Essentials major version prefix
 # (major = EssentialsMajor*1000 + semverMajor, idempotent) and creates the
-# prefixed tag/release. Do not pair with essentialsplugins-getversion.yml, which
-# creates an unprefixed release of its own.
+# prefixed tag/release only after a successful build. Do not pair with
+# essentialsplugins-getversion.yml, which creates an unprefixed release up front.
 #
 # Legacy callers keep using essentialsplugins-4Series-builds.yml until they
 # migrate — see docs/migrating-callers.md.

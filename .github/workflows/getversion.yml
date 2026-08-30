@@ -1,0 +1,113 @@
+name: Get version
+
+# Prefix-aware version resolution for Essentials and Essentials plugins.
+#
+# This workflow ONLY computes the next semantic version and produces the
+# CHANGELOG artifact. It deliberately does NOT create a git tag or a GitHub
+# release — that happens in the build workflow, and only after the compile
+# step has succeeded, so a failed build never leaves a published version
+# behind. (semantic-release here runs with commit-analyzer / release-notes /
+# changelog / exec only — no @semantic-release/git or /github — so it does not
+# tag either.)
+#
+# Replaces essentialsplugins-getversion.yml for migrated callers. The legacy
+# file still creates a release up front; leave callers on it until they move.
+# See docs/migrating-callers.md.
+
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: 'Plain semver from semantic-release, e.g. 2.3.1'
+        value: ${{ jobs.GetVersionNumber.outputs.version }}
+      tag:
+        description: 'Plain semver tag, e.g. v2.3.1 (NOT created here)'
+        value: ${{ jobs.GetVersionNumber.outputs.tag }}
+      newVersion:
+        description: 'Was a new version generated?'
+        value: ${{ jobs.GetVersionNumber.outputs.newVersion }}
+      channel:
+        description: 'Release channel (empty = release, otherwise prerelease)'
+        value: ${{ jobs.GetVersionNumber.outputs.channel }}
+
+jobs:
+  GetVersionNumber:
+    runs-on: ubuntu-latest
+    outputs:
+      newVersion: ${{ steps.get_version.outputs.newVersion }}
+      tag: ${{ steps.get_version.outputs.tag }}
+      version: ${{ steps.get_version.outputs.version }}
+      channel: ${{ steps.get_version.outputs.channel }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Get branch name
+        id: get_branch
+        run: |
+          branch=${GITHUB_REF#refs/heads/}
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${branch//\//-}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_REF: ${{ github.ref }}
+
+      - name: Replace branch name in .releaserc.json
+        if: steps.get_branch.outputs.branch != 'main'
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: 'replace-me-feature-branch'
+          replace: '${{ steps.get_branch.outputs.branch }}'
+          include: '.releaserc.json'
+
+      - name: Replace prerelease name in .releaserc.json
+        if: steps.get_branch.outputs.branch != 'main'
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: 'replace-me-prerelease'
+          replace: '${{ steps.get_branch.outputs.prerelease }}'
+          include: '.releaserc.json'
+
+      - name: Get version number
+        id: get_version
+        # conventional-changelog-conventionalcommits pinned to 9 — see the note in
+        # essentialsplugins-getversion.yml. semantic-release is invoked WITHOUT the
+        # git/github publish plugins so no tag or release is created here.
+        run: npx --package=semantic-release --package=@semantic-release/commit-analyzer --package=@semantic-release/release-notes-generator --package=@semantic-release/changelog --package=@semantic-release/exec --package=conventional-changelog-conventionalcommits@9 -- semantic-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary — no new version
+        if: steps.get_version.outputs.newVersion != 'true'
+        run: |
+          {
+            echo "## Get Version"
+            echo "No new version generated."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release notes
+        if: steps.get_version.outputs.newVersion == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: change-log
+          path: CHANGELOG.md
+          if-no-files-found: error
+
+      - name: Summary — results
+        if: steps.get_version.outputs.newVersion == 'true'
+        run: |
+          {
+            echo "## Get Version"
+            echo "- **Version**: ${{ steps.get_version.outputs.version }}"
+            echo "- **Tag (not yet created)**: ${{ steps.get_version.outputs.tag }}"
+            echo "- **New version**: ${{ steps.get_version.outputs.newVersion }}"
+            echo "- **Channel**: ${{ steps.get_version.outputs.channel }}"
+            echo ""
+            echo "_The build workflow creates the tag/release after a successful compile._"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -110,6 +110,30 @@ or `/p:Version` (4‑Series) → build (`docker-build-3series` | `dotnet-build`)
 `embed-devtools-spa` (4‑Series) → `upload-release` → `publish-nuget-github` →
 `publish-nuget-org`.
 
+## Tag / release ordering (no publish before a green build)
+
+Nothing that is externally visible — a git tag, a GitHub release, a NuGet
+package — is created before the compile step succeeds, unless it is genuinely
+required in order to build (nothing currently is).
+
+- `getversion.yml` **only** computes the version and uploads the `CHANGELOG.md`
+  artifact. It does **not** create a tag or release. (semantic-release runs with
+  `commit-analyzer / release-notes-generator / changelog / exec` only — no
+  `@semantic-release/git` or `/github` — so it does not tag either.) The legacy
+  `essentialsplugins-getversion.yml` keeps its up-front `ncipollo` release step
+  for callers that have not migrated.
+- `apply-essentials-version-prefix` computes version/tag **strings** only — no
+  git side effects.
+- In every build workflow the compile action (`dotnet-build` /
+  `docker-build-3series`) is **not** `continue-on-error`. `upload-release` and the
+  `publish-nuget-*` steps are gated on `success()`, so a failed compile routes to
+  `cleanup-failed-release` (which removes any tag/release a re-run left behind)
+  and never reaches a publish step.
+- Order within the post-build section: create the release, then push to the
+  GitHub feed, then (public gate permitting) nuget.org. All three are
+  `continue-on-error` so a registry hiccup does not fail the run; re-running the
+  workflow is idempotent (`allowUpdates`, `-SkipDuplicate`, prefix modulo).
+
 ## Public NuGet publishing
 
 Unchanged behaviour: the runtime check
