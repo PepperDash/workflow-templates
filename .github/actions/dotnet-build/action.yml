@@ -36,56 +36,15 @@ runs:
     - name: Build
       id: build
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Build Solution`n"
-
-          $sln = ".\${{ inputs.solution-file }}.sln"
-          if (-not (Test-Path -Path $sln)) {
-            throw "Solution '$sln' not found at the repo root."
-          }
-
-          $args = @(
-            'build', $sln,
-            '/p:Platform=Any CPU',
-            "/p:Configuration=${{ inputs.build-type }}",
-            "/p:Version=${{ inputs.version }}",
-            '/p:IncludeSourceRevisionInInformationalVersion=false'
-          )
-          if ("${{ inputs.package-tags }}"   -ne '') { $args += "/p:PackageTags=${{ inputs.package-tags }}" }
-          if ("${{ inputs.repository-url }}" -ne '') {
-            $args += "/p:RepositoryUrl=${{ inputs.repository-url }}"
-            $args += "/p:PackageProjectUrl=${{ inputs.repository-url }}"
-          }
-          if ("${{ inputs.release-notes }}"  -ne '') { $args += "/p:PackageReleaseNotes=${{ inputs.release-notes }}" }
-          $extra = "${{ inputs.extra-args }}"
-          if ($extra -ne '') { $args += $extra.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries) }
-
-          $buildOutput = dotnet @args -m 2>&1
-          $exit = $LASTEXITCODE
-
-          $buildOutput | Out-String | Write-Output
-          $buildOutput | Out-String | Out-File -FilePath "build-output.log" -Encoding utf8
-
-          if ($exit -eq 0) {
-            Add-Content -Path $summary -Value "**BUILD SUCCESS**`n"
-            Add-Content -Path $summary -Value "- **Configuration**: ${{ inputs.build-type }}`n"
-            Add-Content -Path $summary -Value "- **Version**: ${{ inputs.version }}`n"
-            Add-Content -Path $summary -Value "- **Solution**: ${{ inputs.solution-file }}.sln`n"
-          }
-          else {
-            Add-Content -Path $summary -Value "❌ **BUILD FAILED** — exit code $exit. See the step log and the build-output-log artifact.`n"
-            exit $exit
-          }
-        }
-        catch {
-          $err = "dotnet-build failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_SOLUTION_FILE: ${{ inputs.solution-file }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
+        INPUT_PACKAGE_TAGS: ${{ inputs.package-tags }}
+        INPUT_REPOSITORY_URL: ${{ inputs.repository-url }}
+        INPUT_RELEASE_NOTES: ${{ inputs.release-notes }}
+      run: pwsh -File "${{ github.action_path }}/scripts/dotnet-build.ps1"
 
     - name: Upload build log
       if: always()

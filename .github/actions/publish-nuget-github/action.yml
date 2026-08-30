@@ -19,44 +19,8 @@ runs:
   steps:
     - name: Push to GitHub feed
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Publish`n### GitHub Feed`n"
-          $source = "https://nuget.pkg.github.com/${{ inputs.owner }}/index.json"
-
-          $nupkgFiles = Get-ChildItem -Path .\${{ inputs.output-dir }} -Recurse -Filter *.nupkg -ErrorAction SilentlyContinue
-          if ($null -eq $nupkgFiles -or $nupkgFiles.Count -eq 0) {
-            $err = "No .nupkg files found in .\${{ inputs.output-dir }}."
-            Write-Error $err
-            Add-Content -Path $summary -Value "❌ $err`n"
-            exit 1
-          }
-
-          if (-not (nuget sources list | Select-String -Pattern ([regex]::Escape($source)))) {
-            nuget sources add -name github -source $source -username pepperdash -password ${{ inputs.github-token }}
-          }
-
-          $failed = @()
-          foreach ($pkg in $nupkgFiles) {
-            Write-Output "Pushing $($pkg.Name) to GitHub feed..."
-            nuget push $pkg.FullName -source $source -apikey ${{ inputs.github-token }} -SkipDuplicate
-            if ($LASTEXITCODE -ne 0) {
-              $failed += $pkg.Name
-              Add-Content -Path $summary -Value "❌ Failed to push $($pkg.Name) (exit $LASTEXITCODE)`n"
-            } else {
-              Add-Content -Path $summary -Value "- Pushed $($pkg.Name)`n"
-            }
-          }
-          if ($failed.Count -gt 0) {
-            Write-Error "Failed to push: $($failed -join ', ')"
-            exit 1
-          }
-        }
-        catch {
-          $err = "publish-nuget-github failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_OWNER: ${{ inputs.owner }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: pwsh -File "${{ github.action_path }}/scripts/publish-nuget-github.ps1"

@@ -24,43 +24,6 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.gh-token }}
-        TAG: ${{ inputs.tag }}
-        DO_FAIL: ${{ inputs.fail }}
-      run: |
-        set -uo pipefail
-        {
-          echo "## Build Failed Clean up"
-          echo "The build output above shows the errors that caused the failure."
-          echo
-        } >> "$GITHUB_STEP_SUMMARY"
-
-        if [ -z "${TAG:-}" ]; then
-          echo "No tag supplied; nothing to clean up." | tee -a "$GITHUB_STEP_SUMMARY"
-        else
-          release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.id' 2>/dev/null || true)
-          if [ -n "$release_id" ]; then
-            echo "Deleting release '$TAG' (ID: $release_id)..."
-            if gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"; then
-              echo "Deleted release \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "⚠️ Failed to delete release \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            echo "No release for tag '$TAG', skipping." | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
-            echo "Deleting tag '$TAG' from remote..."
-            if git push origin --delete "$TAG"; then
-              echo "Deleted tag \`$TAG\` from remote." >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "⚠️ Failed to delete tag \`$TAG\` from remote." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            echo "Tag '$TAG' not on remote, skipping." | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
-        fi
-
-        if [ "${DO_FAIL}" = "true" ]; then
-          exit 1
-        fi
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_FAIL: ${{ inputs.fail }}
+      run: bash "${{ github.action_path }}/scripts/cleanup-failed-release.sh"

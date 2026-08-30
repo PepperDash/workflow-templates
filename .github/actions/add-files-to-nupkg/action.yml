@@ -30,61 +30,10 @@ runs:
   steps:
     - name: Inject files
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Add files to nupkg`n"
-
-          $srcDir = Join-Path $env:GITHUB_WORKSPACE "${{ inputs.source-dir }}"
-          $files = @()
-          if (Test-Path $srcDir) {
-            $files = @(Get-ChildItem -Path $srcDir -Filter "${{ inputs.pattern }}" -File)
-          }
-          if ($files.Count -eq 0) {
-            $msg = "No files matching '${{ inputs.pattern }}' in ${{ inputs.source-dir }}."
-            if ("${{ inputs.required }}" -eq "true") {
-              Write-Error $msg
-              Add-Content -Path $summary -Value "❌ $msg`n"
-              exit 1
-            }
-            Add-Content -Path $summary -Value "$msg Nothing to inject.`n"
-            exit 0
-          }
-
-          $nupkgs = @(Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "${{ inputs.nupkg-dir }}") -Recurse -Filter *.nupkg)
-          if ($nupkgs.Count -eq 0) {
-            $msg = "No .nupkg found under ${{ inputs.nupkg-dir }}."
-            if ("${{ inputs.required }}" -eq "true") {
-              Write-Error $msg
-              Add-Content -Path $summary -Value "❌ $msg`n"
-              exit 1
-            }
-            Add-Content -Path $summary -Value "$msg`n"
-            exit 0
-          }
-
-          Add-Type -AssemblyName System.IO.Compression
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $target = "${{ inputs.target-path }}".Trim('/').Trim('\')
-
-          foreach ($nupkg in $nupkgs) {
-            $zip = [System.IO.Compression.ZipFile]::Open($nupkg.FullName, [System.IO.Compression.ZipArchiveMode]::Update)
-            try {
-              foreach ($f in $files) {
-                $entryName = "$target/$($f.Name)"
-                ($zip.GetEntry($entryName)) | Where-Object { $_ } | ForEach-Object { $_.Delete() }
-                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, $entryName) | Out-Null
-              }
-            } finally {
-              $zip.Dispose()
-            }
-            Add-Content -Path $summary -Value "- $($nupkg.Name): added $($files.Count) file(s) under ``$target/``.`n"
-          }
-        }
-        catch {
-          $err = "add-files-to-nupkg failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_SOURCE_DIR: ${{ inputs.source-dir }}
+        INPUT_TARGET_PATH: ${{ inputs.target-path }}
+        INPUT_NUPKG_DIR: ${{ inputs.nupkg-dir }}
+        INPUT_PATTERN: ${{ inputs.pattern }}
+        INPUT_REQUIRED: ${{ inputs.required }}
+      run: pwsh -File "${{ github.action_path }}/scripts/add-files-to-nupkg.ps1"

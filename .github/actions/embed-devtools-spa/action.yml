@@ -19,48 +19,7 @@ runs:
   steps:
     - name: Embed SPA
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          $tag = "${{ inputs.devtools-version }}"
-          if ([string]::IsNullOrWhiteSpace($tag)) {
-            Write-Output "devtools-version is empty; skipping SPA embed."
-            exit 0
-          }
-
-          Add-Content -Path $summary -Value "## Embed essentials-devtools SPA`n"
-          $url = "https://github.com/PepperDash/essentials-devtools/releases/download/$tag/essentials-devtools-$tag.zip"
-          Write-Output "Downloading essentials-devtools $tag from $url"
-          Invoke-WebRequest -Uri $url -OutFile "essentials-devtools.zip" -UseBasicParsing
-
-          Add-Type -AssemblyName System.IO.Compression
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $spaZip = (Resolve-Path "essentials-devtools.zip").Path
-          $cpzFiles = @(Get-ChildItem -Recurse -Path (Join-Path $env:GITHUB_WORKSPACE "${{ inputs.output-dir }}") -Filter "*.cpz")
-          if ($cpzFiles.Count -eq 0) {
-            $err = "No .cpz files found under ${{ inputs.output-dir }} to embed the SPA into."
-            Write-Error $err
-            Add-Content -Path $summary -Value "❌ $err`n"
-            exit 1
-          }
-
-          foreach ($cpzFile in $cpzFiles) {
-            Write-Output "Embedding SPA zip into $($cpzFile.FullName)"
-            $zip = [System.IO.Compression.ZipFile]::Open($cpzFile.FullName, [System.IO.Compression.ZipArchiveMode]::Update)
-            try {
-              [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $zip, $spaZip, "essentials-devtools.zip",
-                [System.IO.Compression.CompressionLevel]::NoCompression) | Out-Null
-            } finally {
-              $zip.Dispose()
-            }
-            Add-Content -Path $summary -Value "- $($cpzFile.Name)`n"
-          }
-        }
-        catch {
-          $err = "embed-devtools-spa failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_DEVTOOLS_VERSION: ${{ inputs.devtools-version }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: pwsh -File "${{ github.action_path }}/scripts/embed-devtools-spa.ps1"

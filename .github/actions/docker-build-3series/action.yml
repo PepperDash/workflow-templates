@@ -24,48 +24,16 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Restore NuGet packages
-      if: inputs.restore-packages == 'true'
-      shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          if (-not (Test-Path -Path .\packages.config)) {
-            Add-Content -Path $summary -Value "## Restore NuGet Packages`n⚠️ No packages.config at the repo root; skipping.`n"
-            exit 0
-          }
-          nuget install .\packages.config -OutputDirectory .\packages -ExcludeVersion
-          if ($LASTEXITCODE -ne 0) { throw "nuget install exited with code $LASTEXITCODE." }
-        }
-        catch {
-          $err = "docker-build-3series (restore) failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
-
     - name: Login to Docker Hub
       uses: azure/docker-login@v2
       with:
         username: ${{ inputs.dockerhub-user }}
         password: ${{ inputs.dockerhub-password }}
 
-    - name: Build solution
+    - name: Restore and build
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Build Solution (3-Series / sspbuilder)`n"
-          Write-Output "Building $($env:SOLUTION_PATH) (${{ inputs.build-type }})"
-          docker run --rm --mount "type=bind,source=$($env:GITHUB_WORKSPACE),target=c:\project" pepperdash/sspbuilder:latest c:\cihelpers\vsidebuild.exe -Solution "c:\project\${{ inputs.solution-path }}" -BuildSolutionConfiguration ${{ inputs.build-type }}
-          if ($LASTEXITCODE -ne 0) { throw "sspbuilder exited with code $LASTEXITCODE." }
-          Add-Content -Path $summary -Value "**BUILD SUCCESS** — ${{ inputs.build-type }}`n"
-        }
-        catch {
-          $err = "docker-build-3series failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ **BUILD FAILED** — $err`n"
-          exit 1
-        }
+      env:
+        INPUT_SOLUTION_PATH: ${{ inputs.solution-path }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_RESTORE_PACKAGES: ${{ inputs.restore-packages }}
+      run: pwsh -File "${{ github.action_path }}/scripts/docker-build.ps1"

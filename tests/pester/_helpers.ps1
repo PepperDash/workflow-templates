@@ -53,11 +53,13 @@ function Invoke-ActionScript {
     $envBlock.Add("`$env:$k='$val'")
   }
 
+  $isBash = $Path -like '*.sh'
+  $invoke = if ($isBash) { "& bash '$Path'" } else { "& '$Path'" }
   $runner = Join-Path $WorkDir '_run.ps1'
   @"
 $($envBlock -join "`n")
 Set-Location '$WorkDir'
-& '$Path'
+$invoke
 exit `$LASTEXITCODE
 "@ | Set-Content $runner
 

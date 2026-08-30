@@ -28,13 +28,9 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
-      run: |
-        set -euo pipefail
-        echo "## Upload Release" >> "$GITHUB_STEP_SUMMARY"
-        if [ -z "${{ inputs.tag }}" ]; then
-          echo "❌ upload-release: no tag supplied." | tee -a "$GITHUB_STEP_SUMMARY"
-          exit 1
-        fi
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+      run: bash "${{ github.action_path }}/scripts/validate.sh"
 
     - name: Get release notes
       if: inputs.download-change-log == 'true'
@@ -45,13 +41,10 @@ runs:
 
     - name: Ensure a body file exists
       shell: bash
-      run: |
-        set -euo pipefail
-        body="${{ inputs.body-file }}"
-        if [ ! -f "$body" ]; then
-          echo "⚠️ ${body} not found; creating a placeholder." | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "Release ${{ inputs.tag }}" > "$body"
-        fi
+      env:
+        INPUT_BODY_FILE: ${{ inputs.body-file }}
+        INPUT_TAG: ${{ inputs.tag }}
+      run: bash "${{ github.action_path }}/scripts/ensure-body.sh"
 
     - name: Upload release
       id: release
@@ -68,7 +61,6 @@ runs:
       if: always()
       shell: bash
       run: |
-        set -euo pipefail
         if [ "${{ steps.release.outcome }}" = "success" ]; then
           echo "- Release \`${{ inputs.tag }}\` uploaded." >> "$GITHUB_STEP_SUMMARY"
         else

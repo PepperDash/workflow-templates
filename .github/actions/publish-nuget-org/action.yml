@@ -22,53 +22,9 @@ runs:
   steps:
     - name: Push to NuGet.org (public PepperDash repos only)
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "### Nuget.org`n"
-
-          $owner = "${{ github.repository_owner }}"
-          $visibility = "${{ github.event.repository.visibility }}"
-          Write-Output "Repository Owner: $owner"
-          Write-Output "Repository Visibility: $visibility"
-
-          if ($owner.ToLower() -ne "${{ inputs.required-owner }}".ToLower() -or $visibility.ToLower() -ne 'public') {
-            $msg = "Repository is not a public ${{ inputs.required-owner }} repo; skipping publish to NuGet.org."
-            Write-Warning $msg
-            Add-Content -Path $summary -Value "$msg`n"
-            exit 0
-          }
-
-          $nupkgFiles = Get-ChildItem -Path .\${{ inputs.output-dir }} -Recurse -Filter *.nupkg -ErrorAction SilentlyContinue
-          if ($null -eq $nupkgFiles -or $nupkgFiles.Count -eq 0) {
-            $msg = "No .nupkg files found in .\${{ inputs.output-dir }}; nothing to publish to NuGet.org."
-            Write-Warning $msg
-            Add-Content -Path $summary -Value "⚠️ $msg`n"
-            exit 0
-          }
-
-          nuget setApiKey ${{ inputs.nuget-api-key }} -Source https://api.nuget.org/v3/index.json
-
-          $failed = @()
-          foreach ($pkg in $nupkgFiles) {
-            Write-Output "Pushing $($pkg.Name) to NuGet.org..."
-            nuget push $pkg.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
-            if ($LASTEXITCODE -ne 0) {
-              $failed += $pkg.Name
-              Add-Content -Path $summary -Value "❌ Failed to push $($pkg.Name) (exit $LASTEXITCODE)`n"
-            } else {
-              Add-Content -Path $summary -Value "- Pushed $($pkg.Name)`n"
-            }
-          }
-          if ($failed.Count -gt 0) {
-            Write-Error "Failed to push: $($failed -join ', ')"
-            exit 1
-          }
-        }
-        catch {
-          $err = "publish-nuget-org failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_NUGET_API_KEY: ${{ inputs.nuget-api-key }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_REQUIRED_OWNER: ${{ inputs.required-owner }}
+        GH_REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+      run: pwsh -File "${{ github.action_path }}/scripts/publish-nuget-org.ps1"
