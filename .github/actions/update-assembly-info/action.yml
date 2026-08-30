@@ -1,0 +1,52 @@
+name: Update AssemblyInfo
+description: >
+  Rewrites AssemblyVersion / AssemblyInformationalVersion in every AssemblyInfo.cs
+  and AssemblyInfo.vb under the workspace. For SDK-style (.NET 8) projects that set
+  the version via /p:Version, skip this action.
+
+inputs:
+  version:
+    description: 'Full version string (may include a prerelease suffix).'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Update AssemblyInfo files
+      shell: pwsh
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        function Update-SourceVersion {
+          Param ([string]$Version)
+          $baseVersion = [regex]::Match($Version, "(\d+.\d+.\d+).*").captures.groups[1].value
+          $NewAssemblyVersion = 'AssemblyVersion("' + $baseVersion + '.*")'
+          Write-Output "AssemblyVersion = $NewAssemblyVersion"
+          $NewAssemblyInformationalVersion = 'AssemblyInformationalVersion("' + $Version + '")'
+          Write-Output "AssemblyInformationalVersion = $NewAssemblyInformationalVersion"
+          foreach ($o in $input) {
+            Write-Output $o.FullName
+            $TmpFile = $o.FullName + ".tmp"
+            Get-Content $o.FullName |
+              ForEach-Object { $_ -replace 'AssemblyVersion\(".*"\)', $NewAssemblyVersion } |
+              ForEach-Object { $_ -replace 'AssemblyInformationalVersion\(".*"\)', $NewAssemblyInformationalVersion } > $TmpFile
+            Move-Item $TmpFile $o.FullName -Force
+          }
+        }
+
+        function Update-AllAssemblyInfoFiles ($version) {
+          foreach ($file in "AssemblyInfo.cs", "AssemblyInfo.vb") {
+            Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse | Where-Object { $_.Name -eq $file } | Update-SourceVersion $version
+          }
+        }
+
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Update Assembly Info`n"
+        $r = [System.Text.RegularExpressions.Regex]::Match($env:VERSION, "\d+\.\d+\.\d+.*")
+        if ($r.Success) {
+          Write-Output "Updating Assembly Version to $env:VERSION" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Update-AllAssemblyInfoFiles $env:VERSION
+        }
+        else {
+          Write-Output "Error: Input version $env:VERSION does not match x.y.z format!" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Output "Unable to apply version to AssemblyInfo.cs files" | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+        }

@@ -1,0 +1,42 @@
+name: Docker build (3-Series)
+description: >
+  Logs in to Docker Hub, restores packages.config, and builds a 3-Series solution
+  with the pepperdash/sspbuilder image.
+
+inputs:
+  solution-path:
+    description: 'Repo-root-relative solution path (from get-sln-info).'
+    required: true
+  build-type:
+    description: 'Configuration: Release or Debug.'
+    required: true
+  dockerhub-user:
+    description: 'Docker Hub username.'
+    required: true
+  dockerhub-password:
+    description: 'Docker Hub password / token.'
+    required: true
+  restore-packages:
+    description: 'Run `nuget install packages.config` before building.'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Restore NuGet packages
+      if: inputs.restore-packages == 'true'
+      shell: pwsh
+      run: nuget install .\packages.config -OutputDirectory .\packages -ExcludeVersion
+
+    - name: Login to Docker Hub
+      uses: azure/docker-login@v2
+      with:
+        username: ${{ inputs.dockerhub-user }}
+        password: ${{ inputs.dockerhub-password }}
+
+    - name: Build solution
+      shell: powershell
+      run: |
+        Write-Output "Building $($Env:SOLUTION_PATH) ($('${{ inputs.build-type }}'))"
+        Invoke-Expression "docker run --rm --mount type=bind,source=""$($Env:GITHUB_WORKSPACE)"",target=""c:\project"" pepperdash/sspbuilder:latest c:\cihelpers\vsidebuild.exe -Solution ""c:\project\${{ inputs.solution-path }}"" -BuildSolutionConfiguration ${{ inputs.build-type }}"

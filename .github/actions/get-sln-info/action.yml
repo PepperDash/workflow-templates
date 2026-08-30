@@ -1,0 +1,50 @@
+name: Get solution info
+description: >
+  Locates the solution file matching a filter and exposes its base name and the
+  repo-root-relative path (used by the Docker sspbuilder mount).
+
+inputs:
+  filter:
+    description: 'Glob for the solution file, e.g. "*.4Series.sln" or "*.3Series.sln".'
+    required: true
+
+outputs:
+  solution-file:
+    description: 'Solution file base name (no extension), e.g. "MyPlugin.4Series".'
+    value: ${{ steps.find.outputs.solution-file }}
+  solution-path:
+    description: 'Solution path relative to the repo root (4 path segments stripped), for c:\project mounts.'
+    value: ${{ steps.find.outputs.solution-path }}
+  solution-name:
+    description: 'Solution file name including extension.'
+    value: ${{ steps.find.outputs.solution-name }}
+  solution-dir:
+    description: 'Absolute directory containing the solution file.'
+    value: ${{ steps.find.outputs.solution-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find solution
+      id: find
+      shell: pwsh
+      run: |
+        $filter = "${{ inputs.filter }}"
+        $solution = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter $filter -Recurse -Exclude "packages" | Select-Object -First 1
+        if ($null -eq $solution) {
+          Write-Error "No solution file matching '$filter' found in the repository."
+          exit 1
+        }
+
+        Write-Output "Solution File: $($solution.BaseName)"
+        Write-Output "Solution Name: $($solution.Name)"
+        Write-Output "Solution Directory: $($solution.DirectoryName)"
+
+        # Repo-root-relative path: strip the leading runner path segments (4) the
+        # same way the legacy workflows did, so it works inside the c:\project mount.
+        $relative = $solution.FullName -replace "(?:[^\\/]*[\\/]){4}", ""
+
+        "solution-file=$($solution.BaseName)"  | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "solution-name=$($solution.Name)"      | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "solution-dir=$($solution.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "solution-path=$relative"              | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append

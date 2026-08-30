@@ -1,0 +1,47 @@
+name: Check package name
+description: >
+  Verifies the produced .nupkg id matches PepperDash.Essentials.Plugins.<Make>.<Model>
+  derived from the repo name. Plugin lane only.
+
+inputs:
+  bypass:
+    description: 'Set "true" to skip the check.'
+    required: false
+    default: 'false'
+  output-dir:
+    description: 'Directory holding the built .nupkg.'
+    required: false
+    default: 'output'
+
+runs:
+  using: composite
+  steps:
+    - name: Check package name
+      shell: powershell
+      run: |
+        if ("${{ inputs.bypass }}" -eq "true") {
+          Write-Output "Bypassing package name check."
+          exit 0
+        }
+
+        $repoName = "${{ github.repository }}".Split('/')[-1]
+        $expectedPackageName = "PepperDash.Essentials.Plugins." + ($repoName -replace 'epi-', '').Replace('-', '.')
+
+        Write-Output "Repository Name: $repoName"
+        Write-Output "Expected Package Name: $expectedPackageName"
+
+        $packageFile = Get-ChildItem -Path .\${{ inputs.output-dir }} -Filter *.nupkg -Recurse | Select-Object -First 1
+        if ($null -eq $packageFile) {
+          $msg = "No NuGet package found in .\${{ inputs.output-dir }}."
+          Write-Error $msg
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Check Package Name`n***Failed***`n$msg`n"
+          exit 1
+        }
+
+        $packageName = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
+        if ($packageName.ToLower() -ne $expectedPackageName.ToLower()) {
+          $msg = "Package name mismatch: expected '$expectedPackageName' but found '$packageName'."
+          Write-Error $msg
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Check Package Name`n***Failed***`n$msg`n"
+          exit 1
+        }

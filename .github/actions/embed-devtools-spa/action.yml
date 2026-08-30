@@ -1,0 +1,47 @@
+name: Embed essentials-devtools SPA
+description: >
+  Downloads an essentials-devtools release zip and embeds it (stored, uncompressed)
+  as essentials-devtools.zip inside every .cpz under ./output. No-op when
+  devtools-version is empty.
+
+inputs:
+  devtools-version:
+    description: 'essentials-devtools release tag, e.g. v1.0.0. Empty to skip.'
+    required: false
+    default: ''
+  output-dir:
+    description: 'Directory containing the built .cpz files.'
+    required: false
+    default: 'output'
+
+runs:
+  using: composite
+  steps:
+    - name: Download SPA
+      if: inputs.devtools-version != ''
+      shell: powershell
+      run: |
+        $tag = "${{ inputs.devtools-version }}"
+        $url = "https://github.com/PepperDash/essentials-devtools/releases/download/$tag/essentials-devtools-$tag.zip"
+        Write-Output "Downloading essentials-devtools $tag from $url"
+        Invoke-WebRequest -Uri $url -OutFile "essentials-devtools.zip" -UseBasicParsing
+
+    - name: Embed SPA into CPZ
+      if: inputs.devtools-version != ''
+      shell: pwsh
+      run: |
+        Add-Type -AssemblyName System.IO.Compression
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $spaZip = (Resolve-Path "essentials-devtools.zip").Path
+        $cpzFiles = Get-ChildItem -Recurse -Path (Join-Path $env:GITHUB_WORKSPACE "${{ inputs.output-dir }}") -Filter "*.cpz"
+        foreach ($cpzFile in $cpzFiles) {
+          Write-Output "Embedding SPA zip into $($cpzFile.FullName)"
+          $zip = [System.IO.Compression.ZipFile]::Open($cpzFile.FullName, [System.IO.Compression.ZipArchiveMode]::Update)
+          try {
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+              $zip, $spaZip, "essentials-devtools.zip",
+              [System.IO.Compression.CompressionLevel]::NoCompression) | Out-Null
+          } finally {
+            $zip.Dispose()
+          }
+        }

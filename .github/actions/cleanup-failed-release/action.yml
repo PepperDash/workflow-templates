@@ -1,0 +1,57 @@
+name: Clean up failed release
+description: >
+  On a failed build, deletes the release and remote tag that a previous step may
+  have created, so a retry starts clean. Uses `gh` + `git`, works on Linux and
+  Windows runners.
+
+inputs:
+  tag:
+    description: 'Release tag / git tag to remove.'
+    required: true
+  gh-token:
+    description: 'Token with contents:write (releases + tags).'
+    required: true
+  fail:
+    description: 'Exit non-zero after cleanup so the job is marked failed.'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Delete release and tag
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        set -u
+        {
+          echo "## Build Failed Clean up"
+          echo "The build output above shows the errors that caused the failure."
+          echo
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [ -z "${TAG:-}" ]; then
+          echo "No tag supplied; nothing to clean up."
+        else
+          release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.id' 2>/dev/null || true)
+          if [ -n "$release_id" ]; then
+            echo "Deleting release '$TAG' (ID: $release_id)..."
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}" || true
+            echo "Deleted release \`$TAG\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No release for tag '$TAG', skipping."
+          fi
+
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Deleting tag '$TAG' from remote..."
+            git push origin --delete "$TAG" || echo "Failed to delete tag '$TAG'."
+          else
+            echo "Tag '$TAG' not on remote, skipping."
+          fi
+        fi
+
+        if [ "${{ inputs.fail }}" = "true" ]; then
+          exit 1
+        fi

@@ -1,0 +1,57 @@
+name: dotnet build solution
+description: >
+  Runs `dotnet build` for a 4-Series solution, captures the log as an artifact,
+  and writes a build summary. Fails the step on a non-zero exit code.
+
+inputs:
+  solution-file:
+    description: 'Solution base name (no extension); "<name>.sln" is built from the repo root.'
+    required: true
+  build-type:
+    description: 'Configuration: Release or Debug.'
+    required: true
+  version:
+    description: 'Value passed as /p:Version.'
+    required: true
+  extra-args:
+    description: 'Additional msbuild/dotnet args appended verbatim.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Build
+      id: build
+      shell: powershell
+      run: |
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Build Solution`n"
+
+        $buildOutput = dotnet build .\${{ inputs.solution-file }}.sln `
+          /p:Platform="Any CPU" `
+          /p:Configuration="${{ inputs.build-type }}" `
+          /p:Version="${{ inputs.version }}" `
+          /p:IncludeSourceRevisionInInformationalVersion=false `
+          ${{ inputs.extra-args }} -m 2>&1
+
+        $buildOutput | Out-String | Write-Output
+        $buildOutput | Out-String | Out-File -FilePath "build-output.log" -Encoding utf8
+
+        if ($LASTEXITCODE -eq 0) {
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD SUCCESS**`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Configuration**: ${{ inputs.build-type }}`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Version**: ${{ inputs.version }}`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **Solution**: ${{ inputs.solution-file }}.sln`n"
+        }
+        else {
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "**BUILD FAILED** - Exit code: $LASTEXITCODE`n"
+          exit $LASTEXITCODE
+        }
+
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: build-output-log
+        path: build-output.log
+        retention-days: 30

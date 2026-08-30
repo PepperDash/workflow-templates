@@ -1,0 +1,42 @@
+name: Publish to GitHub NuGet feed
+description: Pushes every .nupkg in the output dir to the org GitHub Packages feed.
+
+inputs:
+  github-token:
+    description: 'Token with packages:write for the org feed.'
+    required: true
+  owner:
+    description: 'Repository owner / feed namespace.'
+    required: false
+    default: ${{ github.repository_owner }}
+  output-dir:
+    description: 'Directory containing the .nupkg files.'
+    required: false
+    default: 'output'
+
+runs:
+  using: composite
+  steps:
+    - name: Push to GitHub feed
+      shell: pwsh
+      run: |
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish`n### GitHub Feed`n"
+        $source = "https://nuget.pkg.github.com/${{ inputs.owner }}/index.json"
+
+        $nupkgFiles = Get-ChildItem -Path .\${{ inputs.output-dir }} -Recurse -Filter *.nupkg
+        if ($nupkgFiles.Count -eq 0) {
+          $msg = "No .nupkg files found in .\${{ inputs.output-dir }}."
+          Write-Error $msg
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $msg
+          exit 1
+        }
+
+        if (-not (nuget sources list | Select-String -Pattern ([regex]::Escape($source)))) {
+          nuget sources add -name github -source $source -username pepperdash -password ${{ inputs.github-token }}
+        }
+
+        $nupkgFiles | ForEach-Object {
+          Write-Output "Pushing $($_.Name) to GitHub feed..."
+          nuget push $_.FullName -source $source -apikey ${{ inputs.github-token }} -SkipDuplicate
+        }
+        Write-Output "Published ${{ github.repository }} to GitHub feed" | Add-Content -Path $env:GITHUB_STEP_SUMMARY

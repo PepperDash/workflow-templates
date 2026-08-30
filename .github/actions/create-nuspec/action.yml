@@ -1,0 +1,88 @@
+name: Create nuspec
+description: >
+  Generates a .nuspec for a plugin repo (no-op when repo-is-plugin is not "true").
+
+inputs:
+  package:
+    description: 'NuGet package id.'
+    required: true
+  title:
+    description: 'Package title.'
+    required: true
+  version:
+    description: 'Package version.'
+    required: true
+  repo-name:
+    description: 'Repository name (used as the description).'
+    required: true
+  repo-is-plugin:
+    description: 'Only generate when "true".'
+    required: true
+  tags:
+    description: 'Space-separated <tags> value.'
+    required: false
+    default: 'crestron'
+  license-type:
+    description: '"file" (LICENSE.md) or "expression".'
+    required: false
+    default: 'file'
+  license-value:
+    description: 'License file name or SPDX expression.'
+    required: false
+    default: 'LICENSE.md'
+  target-framework:
+    description: 'lib\<tfm> target for the output payload, e.g. net35 / net47 / net8.0.'
+    required: false
+    default: 'net35'
+
+outputs:
+  nuspec-file:
+    description: 'Base name of the generated nuspec (empty when not generated).'
+    value: ${{ steps.gen.outputs.nuspec-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate nuspec
+      id: gen
+      shell: pwsh
+      run: |
+        if ("${{ inputs.repo-is-plugin }}" -ne "true") {
+          Write-Output "repo-is-plugin != true; skipping nuspec generation."
+          exit 0
+        }
+
+        Get-ChildItem -Path .\ -Filter *.nuspec -Recurse | Remove-Item -Force
+        $year = (Get-Date).Year
+
+        $nuspecContent = @"
+        <?xml version='1.0' encoding='utf-8'?>
+        <package>
+            <metadata>
+                <id>${{ inputs.package }}</id>
+                <version>${{ inputs.version }}</version>
+                <title>${{ inputs.title }}</title>
+                <authors>PepperDash Technology</authors>
+                <owners>PepperDash</owners>
+                <requireLicenseAcceptance>false</requireLicenseAcceptance>
+                <license type='${{ inputs.license-type }}'>${{ inputs.license-value }}</license>
+                <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
+                <copyright>Copyright $year</copyright>
+                <description>${{ inputs.repo-name }}</description>
+                <tags>${{ inputs.tags }}</tags>
+                <repository type='git' url='https://github.com/${{ github.repository }}'/>
+            </metadata>
+            <files>
+                <file src='LICENSE.md' target=''/>
+                <file src='README.md' target=''/>
+                <file src='.\output\**' target='lib\${{ inputs.target-framework }}'/>
+            </files>
+        </package>
+        "@
+
+        $path = Join-Path $env:GITHUB_WORKSPACE "project.nuspec"
+        Write-Output $nuspecContent > $path
+        $nuspecFile = (Get-ChildItem *.nuspec -Recurse | Select-Object -First 1).BaseName
+        Write-Output "Nuspec File: $nuspecFile"
+        "nuspec-file=$nuspecFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        "NUSPEC_FILE=$nuspecFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

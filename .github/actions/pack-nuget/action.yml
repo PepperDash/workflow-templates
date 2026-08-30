@@ -1,0 +1,32 @@
+name: Pack NuGet package
+description: Runs `nuget pack` for a nuspec unless it is the EssentialsPluginTemplate.
+
+inputs:
+  nuspec-file:
+    description: 'Nuspec base name (without .nuspec). Resolved from the repo root.'
+    required: true
+  version:
+    description: 'Package version.'
+    required: true
+  output-dir:
+    description: 'Output directory for the .nupkg.'
+    required: false
+    default: 'output'
+
+runs:
+  using: composite
+  steps:
+    - name: Add nuget.exe
+      if: ${{ !contains(inputs.nuspec-file, 'EssentialsPluginTemplate') }}
+      uses: nuget/setup-nuget@v4
+
+    - name: nuget pack
+      if: ${{ !contains(inputs.nuspec-file, 'EssentialsPluginTemplate') }}
+      shell: pwsh
+      run: |
+        $filePath = ".\${{ inputs.nuspec-file }}.nuspec"
+        if (-not (Test-Path -Path $filePath)) {
+          Write-Error "NuGet nuspec file '$filePath' not found. Check if the build produced it."
+          exit 1
+        }
+        nuget pack $filePath -version ${{ inputs.version }} -OutputDirectory .\${{ inputs.output-dir }}
