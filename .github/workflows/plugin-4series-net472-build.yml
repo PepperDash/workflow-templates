@@ -1,0 +1,147 @@
+name: Plugin build — 4-Series (net472)
+
+# Reusable build for an Essentials plugin (EPI) targeting 4-Series / .NET Framework 4.72.
+# Composes the shared composite actions in .github/actions/. Applies the Essentials
+# version prefix (major = EssentialsMajor*1000 + semverMajor) by default.
+#
+# Callers keep using essentialsplugins-4Series-builds.yml until they migrate.
+# See docs/migrating-callers.md.
+
+on:
+  workflow_call:
+    inputs:
+      newVersion:
+        description: 'New version? ("true" to release)'
+        required: true
+        type: string
+      version:
+        description: 'Plain semver from getversion, e.g. 2.3.1'
+        required: true
+        type: string
+      tag:
+        description: 'Plain semver tag from getversion, e.g. v2.3.1'
+        required: true
+        type: string
+      channel:
+        description: 'Release channel (empty = Release, otherwise Debug/prerelease)'
+        required: true
+        type: string
+      bypassPackageCheck:
+        description: 'Set true to skip the package-name check.'
+        required: false
+        type: boolean
+        default: false
+      devToolsVersion:
+        description: 'essentials-devtools release tag to embed in the CPZ. Empty to skip.'
+        required: false
+        type: string
+        default: ''
+      applyVersionPrefix:
+        description: 'Apply the Essentials major version prefix.'
+        required: false
+        type: boolean
+        default: true
+      essentialsMajor:
+        description: 'Override the detected Essentials major (blank = detect from .4Series.csproj).'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
+
+jobs:
+  build:
+    name: Build plugin (4-Series net472)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get project info
+        id: project
+        uses: PepperDash/workflow-templates/.github/actions/get-project-info@main
+
+      - name: Apply Essentials version prefix
+        id: prefix
+        if: inputs.applyVersionPrefix
+        uses: PepperDash/workflow-templates/.github/actions/apply-essentials-version-prefix@main
+        with:
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          essentials-major: ${{ inputs.essentialsMajor }}
+          csproj-filter: '*.4Series.csproj'
+
+      - name: Resolve effective version/tag
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ inputs.applyVersionPrefix }}" = "true" ]; then
+            echo "version=${{ steps.prefix.outputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ steps.prefix.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get solution info
+        id: sln
+        uses: PepperDash/workflow-templates/.github/actions/get-sln-info@main
+        with:
+          filter: '*.4Series.sln'
+
+      - name: Build solution
+        uses: PepperDash/workflow-templates/.github/actions/dotnet-build@main
+        with:
+          solution-file: ${{ steps.sln.outputs.solution-file }}
+          build-type: ${{ env.BUILD_TYPE }}
+          version: ${{ steps.ver.outputs.version }}
+
+      - name: Clean up after failed build
+        if: failure()
+        uses: PepperDash/workflow-templates/.github/actions/cleanup-failed-release@main
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check package name
+        if: success()
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/check-package-name@main
+        with:
+          bypass: ${{ inputs.bypassPackageCheck }}
+
+      - name: Embed devtools SPA
+        if: success()
+        uses: PepperDash/workflow-templates/.github/actions/embed-devtools-spa@main
+        with:
+          devtools-version: ${{ inputs.devToolsVersion }}
+
+      - name: Upload release
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/upload-release@main
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          artifacts: 'output\**\*.*(cpz|cplz)'
+          prerelease: ${{ inputs.channel != '' }}
+
+      - name: Publish to GitHub feed
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-github@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NuGet.org
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-org@main
+        with:
+          nuget-api-key: ${{ secrets.NUGET_API_KEY }}
