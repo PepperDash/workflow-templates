@@ -130,6 +130,25 @@ jobs:
         with:
           bypass: ${{ inputs.bypassPackageCheck }}
 
+      - name: Generate config schema
+        id: schema
+        if: success()
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/generate-config-schema@refactor/workflow-modularization-49
+        with:
+          assembly-name: ${{ steps.meta.outputs.assembly-name }}
+          build-type: ${{ env.BUILD_TYPE }}
+          output-dir: output/schemas
+
+      - name: Bundle schema into nupkg
+        if: success() && steps.schema.outputs.schema-count != '0' && steps.schema.outputs.schema-count != ''
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/add-files-to-nupkg@refactor/workflow-modularization-49
+        with:
+          source-dir: output/schemas
+          target-path: schemas
+          pattern: '*.schema.json'
+
       - name: Embed devtools SPA
         if: success()
         uses: PepperDash/workflow-templates/.github/actions/embed-devtools-spa@refactor/workflow-modularization-49
@@ -142,7 +161,7 @@ jobs:
         uses: PepperDash/workflow-templates/.github/actions/upload-release@refactor/workflow-modularization-49
         with:
           tag: ${{ steps.ver.outputs.tag }}
-          artifacts: 'output\**\*.*(cpz|cplz)'
+          artifacts: 'output\**\*.*(cpz|cplz),output\schemas\*.schema.json'
           prerelease: ${{ inputs.channel != '' }}
 
       - name: Publish to GitHub feed
