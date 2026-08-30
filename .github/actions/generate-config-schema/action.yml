@@ -45,67 +45,18 @@ runs:
     - name: Discover config types
       id: discover
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          if ("${{ inputs.types }}" -ne '') {
-            "types=${{ inputs.types }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            exit 0
-          }
-          $found = @()
-          Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -Filter *.cs -File |
-            Where-Object { $_.FullName -notmatch '\\(obj|bin|packages)\\' } |
-            ForEach-Object {
-              $text = Get-Content -Raw -Path $_.FullName
-              foreach ($m in [regex]::Matches($text, '\.ToObject<\s*([A-Za-z_][A-Za-z0-9_.]*)\s*>\s*\(')) {
-                $found += $m.Groups[1].Value
-              }
-            }
-          $found = $found | Sort-Object -Unique
-          "types=$($found -join ';')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          if ($found.Count -eq 0) {
-            Add-Content -Path $summary -Value "## Generate config schema`nNo ``ToObject<T>()`` call sites found; skipping.`n"
-          } else {
-            Write-Output "Config types: $($found -join ', ')"
-          }
-        }
-        catch {
-          $err = "generate-config-schema (discover) failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_TYPES: ${{ inputs.types }}
+      run: pwsh -File "${{ github.action_path }}/scripts/discover-config-types.ps1"
 
     - name: Resolve assembly path
       id: asm
       if: steps.discover.outputs.types != ''
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          $name = "${{ inputs.assembly-name }}"
-          $dlls = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -Filter *.dll -File |
-            Where-Object { $_.FullName -match "\\bin\\${{ inputs.build-type }}" -and $_.FullName -notmatch '\\packages\\' }
-          $pick = $null
-          if ($name -ne '') { $pick = $dlls | Where-Object { $_.BaseName -eq $name } | Select-Object -First 1 }
-          if ($null -eq $pick) { $pick = $dlls | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
-          if ($null -eq $pick) {
-            $err = "Could not find a built plugin .dll under a bin\${{ inputs.build-type }} path."
-            Write-Error $err
-            Add-Content -Path $summary -Value "❌ $err`n"
-            exit 1
-          }
-          "path=$($pick.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          Write-Output "Assembly: $($pick.FullName)"
-        }
-        catch {
-          $err = "generate-config-schema (resolve assembly) failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_ASSEMBLY_NAME: ${{ inputs.assembly-name }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+      run: pwsh -File "${{ github.action_path }}/scripts/resolve-assembly.ps1"
 
     - name: Setup .NET
       if: steps.discover.outputs.types != ''
@@ -117,38 +68,12 @@ runs:
       id: gen
       if: steps.discover.outputs.types != ''
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          $outDir = Join-Path $env:GITHUB_WORKSPACE "${{ inputs.output-dir }}"
-          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-
-          dotnet run --project "${{ github.action_path }}/schema-gen/SchemaGen.csproj" -c Release -- `
-            --assembly "${{ steps.asm.outputs.path }}" `
-            --types "${{ steps.discover.outputs.types }}" `
-            --out "$outDir"
-          $exit = $LASTEXITCODE
-
-          $count = (Get-ChildItem -Path $outDir -Filter *.schema.json -ErrorAction SilentlyContinue | Measure-Object).Count
-          "schema-count=$count" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          if ($exit -ne 0 -and $count -eq 0) {
-            $err = "Schema generation failed (exit $exit) and produced no files."
-            Write-Error $err
-            Add-Content -Path $summary -Value "❌ $err`n"
-            exit $exit
-          }
-          if ($exit -ne 0) {
-            Add-Content -Path $summary -Value "⚠️ Schema generator exited $exit but $count file(s) were written.`n"
-          }
-        }
-        catch {
-          $err = "generate-config-schema (generate) failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_ASSEMBLY_PATH: ${{ steps.asm.outputs.path }}
+        INPUT_TYPES: ${{ steps.discover.outputs.types }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: pwsh -File "${{ github.action_path }}/scripts/generate-schemas.ps1"
 
     - name: Upload schema artifact
       if: steps.discover.outputs.types != '' && inputs.upload-artifact == 'true'
