@@ -1,8 +1,9 @@
 name: Apply Essentials version prefix
 description: >
   Encodes PepperDash Essentials compatibility into the plugin Major version:
-  prefixed_major = (Essentials major * 1000) + semver_major. See
-  .github/instructions/versioning-plan.instructions.md.
+  prefixed_major = (Essentials major * 1000) + (semver major % 1000). See
+  .github/instructions/versioning-plan.instructions.md. Idempotent — re-applying
+  to an already-prefixed version is a no-op.
 
 inputs:
   version:
@@ -41,64 +42,9 @@ runs:
     - name: Compute prefixed version
       id: prefix
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Essentials Version Prefix`n"
-
-          $inputVersion = "${{ inputs.version }}"
-          $essentialsMajor = "${{ inputs.essentials-major }}"
-
-          if ([string]::IsNullOrWhiteSpace($essentialsMajor)) {
-            $csproj = Get-ChildItem -Path . -Filter "${{ inputs.csproj-filter }}" -Recurse | Select-Object -First 1
-            if ($null -eq $csproj) {
-              throw "No csproj matching '${{ inputs.csproj-filter }}' found and no essentials-major supplied."
-            }
-            Write-Output "Reading Essentials version from $($csproj.FullName)"
-            [xml]$xml = Get-Content $csproj.FullName
-            $ref = $xml.Project.ItemGroup.PackageReference | Where-Object { $_.Include -eq "PepperDashEssentials" }
-            if ($null -eq $ref) {
-              throw "No PackageReference for 'PepperDashEssentials' in $($csproj.Name)"
-            }
-            $essentialsMajor = [regex]::Match($ref.Version, "^(\d+)").Groups[1].Value
-            if ([string]::IsNullOrWhiteSpace($essentialsMajor)) {
-              throw "Could not parse a major version from PepperDashEssentials '$($ref.Version)'."
-            }
-          }
-
-          $essentialsMajor = [int]$essentialsMajor
-          $baseMajor = $essentialsMajor * 1000
-
-          $m = [regex]::Match($inputVersion, "^(\d+)\.(\d+)\.(\d+)(.*)")
-          if (-not $m.Success) {
-            throw "Version '$inputVersion' does not match semver format."
-          }
-          # Modulo 1000 so the prefix is idempotent: an already-prefixed input
-          # (e.g. 1002.3.1, the newest tag semantic-release just read) re-yields
-          # 1002.3.1 instead of inflating to 3002 / 4002 / ... on every run.
-          $prefixedMajor = $baseMajor + ([int]$m.Groups[1].Value % 1000)
-          $prefixedVersion = "$prefixedMajor.$($m.Groups[2].Value).$($m.Groups[3].Value)$($m.Groups[4].Value)"
-          $prefixedTag = "v$prefixedVersion"
-
-          Write-Output "Essentials major: $essentialsMajor (base $baseMajor)"
-          Write-Output "Input version:    $inputVersion"
-          Write-Output "Prefixed version: $prefixedVersion"
-          Write-Output "Prefixed tag:     $prefixedTag"
-
-          "version=$prefixedVersion"          | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "tag=$prefixedTag"                   | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "essentials-major=$essentialsMajor" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "VERSION=$prefixedVersion"          | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-          Add-Content -Path $summary -Value "- **Essentials Major**: $essentialsMajor`n"
-          Add-Content -Path $summary -Value "- **Input Version**: $inputVersion`n"
-          Add-Content -Path $summary -Value "- **Prefixed Version**: $prefixedVersion`n"
-          Add-Content -Path $summary -Value "- **Prefixed Tag**: $prefixedTag`n"
-        }
-        catch {
-          $err = "apply-essentials-version-prefix failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_ESSENTIALS_MAJOR: ${{ inputs.essentials-major }}
+        INPUT_CSPROJ_FILTER: ${{ inputs.csproj-filter }}
+      run: pwsh -File "${{ github.action_path }}/scripts/apply-version-prefix.ps1"
