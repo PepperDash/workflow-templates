@@ -28,38 +28,6 @@ runs:
     - name: Find solution
       id: find
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Get Solution Info`n"
-          $filter = "${{ inputs.filter }}"
-          $matches = @(Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter $filter -Recurse -Exclude "packages")
-          if ($matches.Count -eq 0) {
-            $err = "No solution file matching '$filter' found in the repository."
-            Write-Error $err
-            Add-Content -Path $summary -Value "❌ $err`n"
-            exit 1
-          }
-          if ($matches.Count -gt 1) {
-            Add-Content -Path $summary -Value "⚠️ Multiple solutions match '$filter'; using the first: $($matches[0].Name)`n"
-            $matches | ForEach-Object { Write-Warning "  candidate: $($_.FullName)" }
-          }
-          $solution = $matches[0]
-
-          $relative = $solution.FullName -replace "(?:[^\\/]*[\\/]){4}", ""
-
-          "solution-file=$($solution.BaseName)"     | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "solution-name=$($solution.Name)"         | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "solution-dir=$($solution.DirectoryName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "solution-path=$relative"                 | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          Add-Content -Path $summary -Value "- **Solution**: $($solution.Name)`n"
-          Add-Content -Path $summary -Value "- **Path**: $relative`n"
-        }
-        catch {
-          $err = "get-sln-info failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_FILTER: ${{ inputs.filter }}
+      run: pwsh -File "${{ github.action_path }}/scripts/get-sln-info.ps1"

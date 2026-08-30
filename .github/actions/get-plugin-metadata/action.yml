@@ -2,8 +2,8 @@ name: Get plugin metadata
 description: >
   Detects whether the calling repo is a C# Essentials plugin and, if so, extracts
   the built assembly name, the factory TypeNames, and MinimumEssentialsFrameworkVersion
-  for embedding in the NuGet package. Safe to run on any repo — non-plugin / non-C#
-  repos simply return empty values with is-csharp-plugin=false.
+  for embedding in the NuGet package. Safe on any repo — non-plugin / non-C#
+  repos return empty values with is-csharp-plugin=false.
 
 inputs:
   build-type:
@@ -23,7 +23,7 @@ outputs:
     description: 'Primary built assembly base name (no extension).'
     value: ${{ steps.extract.outputs.assembly-name }}
   type-names:
-    description: 'Space-separated factory TypeNames (also comma-listed in type-names-list).'
+    description: 'Space-separated factory TypeNames.'
     value: ${{ steps.extract.outputs.type-names }}
   type-names-list:
     description: 'Comma+space separated factory TypeNames for human-readable text.'
@@ -38,73 +38,7 @@ runs:
     - name: Extract plugin metadata
       id: extract
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Plugin metadata`n"
-
-          $isCsharpPlugin = $false
-          $typeNames = @()
-          $minFwVersions = @()
-
-          $csFiles = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -Filter *.cs -File |
-            Where-Object { $_.FullName -notmatch '\\(obj|bin|packages)\\' }
-
-          foreach ($file in $csFiles) {
-            $text = Get-Content -Raw -Path $file.FullName
-
-            if ($text -notmatch 'EssentialsPlugin\w*Factory') { continue }
-
-            # TypeNames = new List<string>( ) { "a", "b", ... };  (single or multi-line)
-            foreach ($m in [regex]::Matches($text, 'TypeNames\s*=\s*new\s+List<string>\s*\(?\s*\)?\s*\{(?<body>[^}]*)\}')) {
-              $isCsharpPlugin = $true
-              foreach ($s in [regex]::Matches($m.Groups['body'].Value, '"([^"]+)"')) {
-                $typeNames += $s.Groups[1].Value
-              }
-            }
-
-            foreach ($m in [regex]::Matches($text, 'MinimumEssentialsFrameworkVersion\s*=\s*"([^"]+)"')) {
-              $minFwVersions += $m.Groups[1].Value
-            }
-          }
-
-          $typeNames = $typeNames | Select-Object -Unique
-          $typeNamesSpace = ($typeNames -join ' ')
-          $typeNamesList  = ($typeNames -join ', ')
-
-          $minFw = ''
-          if ($minFwVersions.Count -gt 0) {
-            $minFw = ($minFwVersions | Sort-Object { try { [version]($_ -replace '-.*$') } catch { [version]'0.0.0' } } -Descending | Select-Object -First 1)
-          }
-
-          # Primary assembly: prefer one matching the package id, else the newest
-          # non-3rd-party dll under bin\<build-type>.
-          $assemblyName = ''
-          $dlls = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -Filter *.dll -File |
-            Where-Object { $_.FullName -match "\\bin\\${{ inputs.build-type }}" -and $_.FullName -notmatch '\\packages\\' }
-          if ("${{ inputs.package }}" -ne '') {
-            $match = $dlls | Where-Object { $_.BaseName -eq "${{ inputs.package }}" } | Select-Object -First 1
-            if ($match) { $assemblyName = $match.BaseName }
-          }
-          if ($assemblyName -eq '' -and $dlls.Count -gt 0) {
-            $assemblyName = ($dlls | Sort-Object LastWriteTime -Descending | Select-Object -First 1).BaseName
-          }
-
-          "is-csharp-plugin=$($isCsharpPlugin.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "assembly-name=$assemblyName"        | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "type-names=$typeNamesSpace"         | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "type-names-list=$typeNamesList"     | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "min-framework-version=$minFw"       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-          Add-Content -Path $summary -Value "- **C# Essentials plugin**: $isCsharpPlugin`n"
-          Add-Content -Path $summary -Value "- **Assembly**: $(if ($assemblyName) { $assemblyName } else { '_not found_' })`n"
-          Add-Content -Path $summary -Value "- **Factory TypeNames**: $(if ($typeNamesList) { $typeNamesList } else { '_none_' })`n"
-          Add-Content -Path $summary -Value "- **MinimumEssentialsFrameworkVersion**: $(if ($minFw) { $minFw } else { '_none_' })`n"
-        }
-        catch {
-          $err = "get-plugin-metadata failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+      run: pwsh -File "${{ github.action_path }}/scripts/get-plugin-metadata.ps1"

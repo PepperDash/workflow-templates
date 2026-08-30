@@ -23,44 +23,8 @@ runs:
   steps:
     - name: Check package name
       shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $summary = $env:GITHUB_STEP_SUMMARY
-        try {
-          Add-Content -Path $summary -Value "## Check Package Name`n"
-
-          if ("${{ inputs.bypass }}" -eq "true") {
-            Add-Content -Path $summary -Value "Bypassed (bypass = true).`n"
-            Write-Output "Bypassing package name check."
-            exit 0
-          }
-
-          $repoName = "${{ github.repository }}".Split('/')[-1]
-          $expected = "${{ inputs.expected-prefix }}" + ($repoName -replace 'epi-', '').Replace('-', '.')
-          Write-Output "Repository Name: $repoName"
-          Write-Output "Expected Package Name: $expected"
-
-          $packageFile = Get-ChildItem -Path .\${{ inputs.output-dir }} -Filter *.nupkg -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -eq $packageFile) {
-            $err = "No NuGet package found in .\${{ inputs.output-dir }}."
-            Write-Error $err
-            Add-Content -Path $summary -Value "❌ $err`n"
-            exit 1
-          }
-
-          $actual = [System.IO.Path]::GetFileNameWithoutExtension($packageFile.FullName) -replace '\.\d+.*$'
-          if ($actual.ToLower() -ne $expected.ToLower()) {
-            $err = "Package name mismatch: expected '$expected' but found '$actual'."
-            Write-Error $err
-            Add-Content -Path $summary -Value "❌ $err`n"
-            exit 1
-          }
-
-          Add-Content -Path $summary -Value "- OK: ``$actual```n"
-        }
-        catch {
-          $err = "check-package-name failed: $($_.Exception.Message)"
-          Write-Error $err
-          Add-Content -Path $summary -Value "❌ $err`n"
-          exit 1
-        }
+      env:
+        INPUT_BYPASS: ${{ inputs.bypass }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_EXPECTED_PREFIX: ${{ inputs.expected-prefix }}
+      run: pwsh -File "${{ github.action_path }}/scripts/check-package-name.ps1"
