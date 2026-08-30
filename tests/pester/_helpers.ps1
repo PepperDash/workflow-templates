@@ -3,6 +3,18 @@
 
 $script:RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
 
+# YAML parsing for the workflow-structure tests.
+if (-not (Get-Module -ListAvailable powershell-yaml)) {
+  Write-Host "Installing powershell-yaml..."
+  Install-Module powershell-yaml -Scope CurrentUser -Force -AllowClobber
+}
+Import-Module powershell-yaml -ErrorAction Stop
+
+function Get-Yaml {
+  param([Parameter(Mandatory)][string]$Path)
+  ConvertFrom-Yaml (Get-Content -Raw -Path $Path)
+}
+
 function Get-ActionScript {
   param([Parameter(Mandatory)][string]$Action, [Parameter(Mandatory)][string]$Script)
   Join-Path $script:RepoRoot ".github/actions/$Action/scripts/$Script"
