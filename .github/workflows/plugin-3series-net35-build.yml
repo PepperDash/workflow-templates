@@ -1,0 +1,225 @@
+name: Plugin build — 3-Series (net35)
+
+# Reusable build for an Essentials plugin (EPI) targeting 3-Series / .NET CF 3.5.
+# Composes the shared composite actions in .github/actions/. Builds inside the
+# pepperdash/sspbuilder Docker image on the self-hosted dmz-windows-2019 group,
+# the same as the legacy essentialsplugins-3Series-builds.yml.
+#
+# Tag/release safety: getversion.yml creates no tag/release, and
+# apply-essentials-version-prefix only computes strings. The Docker compile step
+# is NOT continue-on-error; upload-release and the publish steps are gated on
+# success(), so a failed compile never reaches a publish.
+#
+# OPEN DECISION — 3-Series NuGet package id spelling:
+#   Legacy 3-Series published  PepperDash.Essentials.Plugin.<MakeModel>  (singular
+#   segment, concatenated make+model). The 4-Series convention is
+#   PepperDash.Essentials.Plugins.<Make>.<Model>  (plural, dotted).
+#   Defaults below preserve the legacy identity so migrated repos do not orphan
+#   existing PackageReferences:
+#     packageStyle:        concatenated
+#     packagePrefix:       PepperDash.Essentials.Plugin.
+#     bypassPackageCheck:  true   (check-package-name only knows the dotted-plural form)
+#   To adopt the 4-Series convention instead, a caller sets packageStyle: dotted,
+#   packagePrefix: 'PepperDash.Essentials.Plugins.', bypassPackageCheck: false —
+#   and accepts that the published package id changes.
+#
+# Legacy callers keep using essentialsplugins-3Series-builds.yml until they
+# migrate — see docs/migrating-callers.md.
+#
+# NOTE (pre-merge): action refs are pinned to the feature branch for testing.
+# Flip every "@refactor/workflow-modularization-49" to "@main" before merging.
+
+on:
+  workflow_call:
+    inputs:
+      newVersion:
+        description: 'New version? ("true" to release)'
+        required: true
+        type: string
+      version:
+        description: 'Plain semver from getversion, e.g. 2.3.1'
+        required: true
+        type: string
+      tag:
+        description: 'Plain semver tag from getversion, e.g. v2.3.1'
+        required: true
+        type: string
+      channel:
+        description: 'Release channel (empty = Release, otherwise Debug/prerelease)'
+        required: true
+        type: string
+      bypassPackageCheck:
+        description: 'Skip the package-name check (default true for 3-Series — see header).'
+        required: false
+        type: boolean
+        default: true
+      applyVersionPrefix:
+        description: 'Apply the Essentials major version prefix (3-Series is always Essentials v1 -> 1xxx).'
+        required: false
+        type: boolean
+        default: true
+      packageStyle:
+        description: '"concatenated" (legacy 3-Series) or "dotted" (4-Series convention).'
+        required: false
+        type: string
+        default: 'concatenated'
+      packagePrefix:
+        description: 'NuGet id prefix.'
+        required: false
+        type: string
+        default: 'PepperDash.Essentials.Plugin.'
+      cleanupFailedRelease:
+        description: >
+          Run cleanup-failed-release on failure. Off by default: it is a bash+gh
+          step and the dmz-windows-2019 group is not guaranteed to have either.
+          Safe to enable once that runner is confirmed to provide gh + bash.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
+
+jobs:
+  build:
+    name: Build plugin (3-Series net35)
+    runs-on:
+      group: dmz-windows-2019
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        shell: bash
+        run: git fetch --tags
+
+      - name: Apply Essentials version prefix
+        id: prefix
+        if: inputs.applyVersionPrefix
+        uses: PepperDash/workflow-templates/.github/actions/apply-essentials-version-prefix@refactor/workflow-modularization-49
+        with:
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          essentials-major: '1'
+
+      - name: Resolve effective version/tag
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ inputs.applyVersionPrefix }}" -eq "true") {
+            "version=${{ steps.prefix.outputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "tag=${{ steps.prefix.outputs.tag }}"         | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            "version=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "tag=${{ inputs.tag }}"         | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      - name: Get solution info
+        id: sln
+        uses: PepperDash/workflow-templates/.github/actions/get-sln-info@refactor/workflow-modularization-49
+        with:
+          filter: '*.3Series.sln'
+
+      - name: Get project info
+        id: proj
+        uses: PepperDash/workflow-templates/.github/actions/get-project-info@refactor/workflow-modularization-49
+        with:
+          package-prefix: ${{ inputs.packagePrefix }}
+          package-style: ${{ inputs.packageStyle }}
+
+      - name: Get plugin metadata
+        id: meta
+        uses: PepperDash/workflow-templates/.github/actions/get-plugin-metadata@refactor/workflow-modularization-49
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+          package: ${{ steps.proj.outputs.package }}
+
+      - name: Update AssemblyInfo
+        uses: PepperDash/workflow-templates/.github/actions/update-assembly-info@refactor/workflow-modularization-49
+        with:
+          version: ${{ steps.ver.outputs.version }}
+
+      - name: Build solution (Docker sspbuilder)
+        uses: PepperDash/workflow-templates/.github/actions/docker-build-3series@refactor/workflow-modularization-49
+        with:
+          solution-path: ${{ steps.sln.outputs.solution-path }}
+          build-type: ${{ env.BUILD_TYPE }}
+          dockerhub-user: ${{ secrets.DOCKERHUB_USER }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Clean up after failed build
+        if: failure() && inputs.cleanupFailedRelease
+        uses: PepperDash/workflow-templates/.github/actions/cleanup-failed-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy build output
+        if: success()
+        uses: PepperDash/workflow-templates/.github/actions/copy-build-output@refactor/workflow-modularization-49
+        with:
+          version: ${{ steps.ver.outputs.version }}
+          build-type: ${{ env.BUILD_TYPE }}
+          package: ${{ steps.proj.outputs.package }}
+          extensions: '.cpz .clz .cplz'
+          include-dll: 'true'
+          rename-mode: 'all'
+
+      - name: Create nuspec
+        id: nuspec
+        if: success()
+        uses: PepperDash/workflow-templates/.github/actions/create-nuspec@refactor/workflow-modularization-49
+        with:
+          package: ${{ steps.proj.outputs.package }}
+          title: ${{ steps.proj.outputs.title }}
+          version: ${{ steps.ver.outputs.version }}
+          repo-name: ${{ steps.proj.outputs.repo-name }}
+          repo-is-plugin: ${{ steps.proj.outputs.repo-is-plugin }}
+          assembly-name: ${{ steps.meta.outputs.assembly-name }}
+          type-names: ${{ steps.meta.outputs.type-names }}
+          type-names-list: ${{ steps.meta.outputs.type-names-list }}
+          min-framework-version: ${{ steps.meta.outputs.min-framework-version }}
+          target-framework: 'net35'
+
+      - name: Pack NuGet package
+        if: success() && steps.nuspec.outputs.nuspec-file != ''
+        uses: PepperDash/workflow-templates/.github/actions/pack-nuget@refactor/workflow-modularization-49
+        with:
+          nuspec-file: ${{ steps.nuspec.outputs.nuspec-file }}
+          version: ${{ steps.ver.outputs.version }}
+
+      - name: Check package name
+        if: success()
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/check-package-name@refactor/workflow-modularization-49
+        with:
+          bypass: ${{ inputs.bypassPackageCheck }}
+
+      - name: Upload release
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/upload-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          artifacts: 'output\*.*(cpz|cplz|clz)'
+          prerelease: ${{ inputs.channel != '' }}
+
+      - name: Publish to GitHub feed
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-github@refactor/workflow-modularization-49
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NuGet.org
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-org@refactor/workflow-modularization-49
+        with:
+          nuget-api-key: ${{ secrets.NUGET_API_KEY }}

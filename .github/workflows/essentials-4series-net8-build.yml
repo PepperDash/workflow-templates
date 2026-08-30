@@ -1,0 +1,105 @@
+name: Essentials build — 4-Series (net8)
+
+# Reusable build for Essentials / Core itself (NOT a plugin) targeting 4-Series /
+# .NET 8. Identical to essentials-4series-net472-build.yml except it installs the
+# .NET 8 SDK first (actions/setup-dotnet). The target framework comes from the
+# .4Series.csproj <TargetFramework>; the compile command is the same
+# `dotnet build`. The separate file gives a net8 consumer a stable name to point
+# its -caller at.
+#
+# Tag/release safety: dotnet-build is NOT continue-on-error; upload-release and
+# the publish steps are gated on success(). Pair with getversion.yml.
+#
+# NOTE (pre-merge): action refs are pinned to the feature branch for testing.
+# Flip every "@refactor/workflow-modularization-49" to "@main" before merging.
+
+on:
+  workflow_call:
+    inputs:
+      newVersion:
+        description: 'New version? ("true" to release)'
+        required: true
+        type: string
+      version:
+        description: 'Plain semver from getversion, e.g. 2.3.1'
+        required: true
+        type: string
+      tag:
+        description: 'Plain semver tag from getversion, e.g. v2.3.1'
+        required: true
+        type: string
+      channel:
+        description: 'Release channel (empty = Release, otherwise Debug/prerelease)'
+        required: true
+        type: string
+      dotnetVersion:
+        description: '.NET SDK version to install for the build.'
+        required: false
+        type: string
+        default: '8.0.x'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
+
+jobs:
+  build:
+    name: Build Essentials/Core (4-Series net8)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnetVersion }}
+
+      - name: Get solution info
+        id: sln
+        uses: PepperDash/workflow-templates/.github/actions/get-sln-info@refactor/workflow-modularization-49
+        with:
+          filter: '*.4Series.sln'
+
+      - name: Build solution
+        uses: PepperDash/workflow-templates/.github/actions/dotnet-build@refactor/workflow-modularization-49
+        with:
+          solution-file: ${{ steps.sln.outputs.solution-file }}
+          build-type: ${{ env.BUILD_TYPE }}
+          version: ${{ inputs.version }}
+          repository-url: https://github.com/${{ github.repository }}
+
+      - name: Clean up after failed build
+        if: failure()
+        uses: PepperDash/workflow-templates/.github/actions/cleanup-failed-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ inputs.tag }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/upload-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ inputs.tag }}
+          artifacts: 'output\**\*.*(cpz|cplz)'
+          prerelease: ${{ inputs.channel != '' }}
+
+      - name: Publish to GitHub feed
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-github@refactor/workflow-modularization-49
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NuGet.org
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-org@refactor/workflow-modularization-49
+        with:
+          nuget-api-key: ${{ secrets.NUGET_API_KEY }}
