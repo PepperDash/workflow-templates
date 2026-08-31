@@ -1,0 +1,19 @@
+name: Update AssemblyInfo
+description: >
+  Rewrites AssemblyVersion / AssemblyInformationalVersion in every AssemblyInfo.cs
+  and AssemblyInfo.vb under the workspace. For SDK-style (.NET 8) projects that set
+  the version via /p:Version, skip this action.
+
+inputs:
+  version:
+    description: 'Full version string (may include a prerelease suffix).'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Update AssemblyInfo files
+      shell: pwsh
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: pwsh -File "${{ github.action_path }}/scripts/update-assembly-info.ps1"

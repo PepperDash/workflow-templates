@@ -1,0 +1,26 @@
+name: Publish to GitHub NuGet feed
+description: Pushes every .nupkg in the output dir to the org GitHub Packages feed.
+
+inputs:
+  github-token:
+    description: 'Token with packages:write for the org feed.'
+    required: true
+  owner:
+    description: 'Repository owner / feed namespace.'
+    required: false
+    default: ${{ github.repository_owner }}
+  output-dir:
+    description: 'Directory containing the .nupkg files.'
+    required: false
+    default: 'output'
+
+runs:
+  using: composite
+  steps:
+    - name: Push to GitHub feed
+      shell: pwsh
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_OWNER: ${{ inputs.owner }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: pwsh -File "${{ github.action_path }}/scripts/publish-nuget-github.ps1"

@@ -1,2 +1,10 @@
 # Ignore the output directory
 output/
+
+# Test + build artifacts
+test-results.xml
+[Bb]in/
+[Oo]bj/
+
+# Pester default report name
+testResults.xml

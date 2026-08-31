@@ -1,0 +1,52 @@
+name: Copy build output
+description: >
+  Collects build artifacts (.cpz/.clz/.cplz and their matching .dll) from the
+  solution tree into ./output and renames them to embed the version. Parameterised
+  to cover both the Essentials/Core and plugin variants.
+
+inputs:
+  version: { description: 'Version string to embed in artifact names.', required: true }
+  build-type: { description: 'Release or Debug.', required: true }
+  package:
+    description: 'NuGet package id (used to also match a renamed primary .dll).'
+    required: false
+    default: ''
+  extensions:
+    description: 'Space-separated artifact extensions, with leading dots.'
+    required: false
+    default: '.cpz .clz .cplz'
+  include-dll:
+    description: 'Also collect all .dll files alongside the artifacts (Essentials/Core).'
+    required: false
+    default: 'false'
+  bin-filter:
+    description: '"bin" matches any bin dir; "bin-config" restricts to bin/<build-type>.'
+    required: false
+    default: 'bin-config'
+  rename-mode:
+    description: >
+      "all" renames every collected artifact/.dll (plugin). "essentials" renames
+      only PepperDashEssentials / PepperDashCore / PepperDash_Core and strips the
+      ".3Series" moniker; other files (incl. .dll) keep their names.
+    required: false
+    default: 'all'
+  copy-nuspec:
+    description: 'Copy any pre-existing .nuspec to the repo root and export NUSPEC_FILE.'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Copy and rename output
+      shell: pwsh
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_EXTENSIONS: ${{ inputs.extensions }}
+        INPUT_INCLUDE_DLL: ${{ inputs.include-dll }}
+        INPUT_BIN_FILTER: ${{ inputs.bin-filter }}
+        INPUT_RENAME_MODE: ${{ inputs.rename-mode }}
+        INPUT_COPY_NUSPEC: ${{ inputs.copy-nuspec }}
+      run: pwsh -File "${{ github.action_path }}/scripts/copy-build-output.ps1"

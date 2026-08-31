@@ -1,0 +1,72 @@
+name: Create nuspec
+description: >
+  Generates a .nuspec for a plugin repo (no-op when repo-is-plugin is not "true").
+  The package embeds: assembly name, repository URL (projectUrl + <repository>), and
+  — for C# Essentials plugins — the factory TypeNames and
+  MinimumEssentialsFrameworkVersion.
+
+inputs:
+  package: { description: 'NuGet package id.', required: true }
+  title: { description: 'Package title.', required: true }
+  version: { description: 'Package version.', required: true }
+  repo-name: { description: 'Repository name (used in the description).', required: true }
+  repo-is-plugin: { description: 'Only generate when "true".', required: true }
+  assembly-name:
+    description: 'Primary built assembly base name (from get-plugin-metadata).'
+    required: false
+    default: ''
+  type-names:
+    description: 'Space-separated factory TypeNames (from get-plugin-metadata).'
+    required: false
+    default: ''
+  type-names-list:
+    description: 'Comma+space separated factory TypeNames for readable text.'
+    required: false
+    default: ''
+  min-framework-version:
+    description: 'MinimumEssentialsFrameworkVersion (from get-plugin-metadata).'
+    required: false
+    default: ''
+  tags:
+    description: 'Base space-separated <tags> value (TypeNames are appended).'
+    required: false
+    default: 'crestron'
+  license-type:
+    description: '"file" (LICENSE.md) or "expression".'
+    required: false
+    default: 'file'
+  license-value:
+    description: 'License file name or SPDX expression.'
+    required: false
+    default: 'LICENSE.md'
+  target-framework:
+    description: 'lib\<tfm> target for the payload, e.g. net35 / net47 / net8.0.'
+    required: false
+    default: 'net35'
+
+outputs:
+  nuspec-file:
+    description: 'Base name of the generated nuspec (empty when not generated).'
+    value: ${{ steps.gen.outputs.nuspec-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate nuspec
+      id: gen
+      shell: pwsh
+      env:
+        INPUT_PACKAGE: ${{ inputs.package }}
+        INPUT_TITLE: ${{ inputs.title }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_REPO_NAME: ${{ inputs.repo-name }}
+        INPUT_REPO_IS_PLUGIN: ${{ inputs.repo-is-plugin }}
+        INPUT_ASSEMBLY_NAME: ${{ inputs.assembly-name }}
+        INPUT_TYPE_NAMES: ${{ inputs.type-names }}
+        INPUT_TYPE_NAMES_LIST: ${{ inputs.type-names-list }}
+        INPUT_MIN_FRAMEWORK_VERSION: ${{ inputs.min-framework-version }}
+        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_LICENSE_TYPE: ${{ inputs.license-type }}
+        INPUT_LICENSE_VALUE: ${{ inputs.license-value }}
+        INPUT_TARGET_FRAMEWORK: ${{ inputs.target-framework }}
+      run: pwsh -File "${{ github.action_path }}/scripts/create-nuspec.ps1"

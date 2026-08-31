@@ -1,0 +1,30 @@
+name: Check package name
+description: >
+  Verifies the produced .nupkg id matches the expected
+  <prefix><repo-without-epi- with '-' -> '.'> derived from the repo name.
+  Plugin lane only.
+
+inputs:
+  bypass:
+    description: 'Set "true" to skip the check.'
+    required: false
+    default: 'false'
+  output-dir:
+    description: 'Directory holding the built .nupkg.'
+    required: false
+    default: 'output'
+  expected-prefix:
+    description: 'Expected NuGet id prefix.'
+    required: false
+    default: 'PepperDash.Essentials.Plugins.'
+
+runs:
+  using: composite
+  steps:
+    - name: Check package name
+      shell: pwsh
+      env:
+        INPUT_BYPASS: ${{ inputs.bypass }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_EXPECTED_PREFIX: ${{ inputs.expected-prefix }}
+      run: pwsh -File "${{ github.action_path }}/scripts/check-package-name.ps1"

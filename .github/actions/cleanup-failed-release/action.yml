@@ -1,0 +1,29 @@
+name: Clean up failed release
+description: >
+  On a failed build, deletes the release and remote tag that a previous step may
+  have created, so a retry starts clean. Uses `gh` + `git` — verified on
+  ubuntu-latest and windows-latest (Git Bash). Do not use on the self-hosted
+  dmz-windows-2019 group unless gh + bash are confirmed present there.
+
+inputs:
+  tag:
+    description: 'Release tag / git tag to remove.'
+    required: true
+  gh-token:
+    description: 'Token with contents:write (releases + tags).'
+    required: true
+  fail:
+    description: 'Exit non-zero after cleanup so the job is marked failed.'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Delete release and tag
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_FAIL: ${{ inputs.fail }}
+      run: bash "${{ github.action_path }}/scripts/cleanup-failed-release.sh"

@@ -1,0 +1,39 @@
+name: Docker build (3-Series)
+description: >
+  Logs in to Docker Hub, restores packages.config, and builds a 3-Series solution
+  with the pepperdash/sspbuilder image.
+
+inputs:
+  solution-path:
+    description: 'Repo-root-relative solution path (from get-sln-info).'
+    required: true
+  build-type:
+    description: 'Configuration: Release or Debug.'
+    required: true
+  dockerhub-user:
+    description: 'Docker Hub username.'
+    required: true
+  dockerhub-password:
+    description: 'Docker Hub password / token.'
+    required: true
+  restore-packages:
+    description: 'Run `nuget install packages.config` before building.'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Login to Docker Hub
+      uses: azure/docker-login@v2
+      with:
+        username: ${{ inputs.dockerhub-user }}
+        password: ${{ inputs.dockerhub-password }}
+
+    - name: Restore and build
+      shell: pwsh
+      env:
+        INPUT_SOLUTION_PATH: ${{ inputs.solution-path }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_RESTORE_PACKAGES: ${{ inputs.restore-packages }}
+      run: pwsh -File "${{ github.action_path }}/scripts/docker-build.ps1"

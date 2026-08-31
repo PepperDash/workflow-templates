@@ -1,0 +1,84 @@
+name: Generate config schema
+description: >
+  Generates JSON Schema for a 4-Series Essentials plugin's configuration classes.
+  Config roots are auto-detected from `dc.Properties.ToObject<T>()` call sites in
+  the plugin source; a small NJsonSchema tool then reflects the compiled types.
+  4-Series only (needs the built assembly to load).
+
+inputs:
+  assembly-name:
+    description: 'Primary plugin assembly base name (from get-plugin-metadata). Blank = auto-detect.'
+    required: false
+    default: ''
+  build-type:
+    description: 'Release or Debug — used to locate the built assembly.'
+    required: false
+    default: 'Release'
+  types:
+    description: 'Explicit semicolon-separated config type names. Blank = auto-detect from source.'
+    required: false
+    default: ''
+  output-dir:
+    description: 'Directory (relative to the workspace) to write <Type>.schema.json into.'
+    required: false
+    default: 'output/schemas'
+  dotnet-version:
+    description: '.NET SDK to run the generator with.'
+    required: false
+    default: '8.0.x'
+  upload-artifact:
+    description: 'Upload the schemas as a workflow artifact.'
+    required: false
+    default: 'true'
+
+outputs:
+  schema-dir:
+    description: 'Directory the schema files were written to.'
+    value: ${{ inputs.output-dir }}
+  schema-count:
+    description: 'Number of schema files produced.'
+    value: ${{ steps.gen.outputs.schema-count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Discover config types
+      id: discover
+      shell: pwsh
+      env:
+        INPUT_TYPES: ${{ inputs.types }}
+      run: pwsh -File "${{ github.action_path }}/scripts/discover-config-types.ps1"
+
+    - name: Resolve assembly path
+      id: asm
+      if: steps.discover.outputs.types != ''
+      shell: pwsh
+      env:
+        INPUT_ASSEMBLY_NAME: ${{ inputs.assembly-name }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+      run: pwsh -File "${{ github.action_path }}/scripts/resolve-assembly.ps1"
+
+    - name: Setup .NET
+      if: steps.discover.outputs.types != ''
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Generate schemas
+      id: gen
+      if: steps.discover.outputs.types != ''
+      shell: pwsh
+      env:
+        INPUT_ASSEMBLY_PATH: ${{ steps.asm.outputs.path }}
+        INPUT_TYPES: ${{ steps.discover.outputs.types }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: pwsh -File "${{ github.action_path }}/scripts/generate-schemas.ps1"
+
+    - name: Upload schema artifact
+      if: steps.discover.outputs.types != '' && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: config-schemas
+        path: ${{ inputs.output-dir }}/*.schema.json
+        if-no-files-found: warn

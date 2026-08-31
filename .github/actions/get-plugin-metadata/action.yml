@@ -1,0 +1,44 @@
+name: Get plugin metadata
+description: >
+  Detects whether the calling repo is a C# Essentials plugin and, if so, extracts
+  the built assembly name, the factory TypeNames, and MinimumEssentialsFrameworkVersion
+  for embedding in the NuGet package. Safe on any repo — non-plugin / non-C#
+  repos return empty values with is-csharp-plugin=false.
+
+inputs:
+  build-type:
+    description: 'Release or Debug — used to locate the built assembly.'
+    required: false
+    default: 'Release'
+  package:
+    description: 'Expected NuGet package id / primary assembly base name (fallback).'
+    required: false
+    default: ''
+
+outputs:
+  is-csharp-plugin:
+    description: '"true" when a C# EssentialsPlugin*Factory with TypeNames was found.'
+    value: ${{ steps.extract.outputs.is-csharp-plugin }}
+  assembly-name:
+    description: 'Primary built assembly base name (no extension).'
+    value: ${{ steps.extract.outputs.assembly-name }}
+  type-names:
+    description: 'Space-separated factory TypeNames.'
+    value: ${{ steps.extract.outputs.type-names }}
+  type-names-list:
+    description: 'Comma+space separated factory TypeNames for human-readable text.'
+    value: ${{ steps.extract.outputs.type-names-list }}
+  min-framework-version:
+    description: 'Highest MinimumEssentialsFrameworkVersion declared by any factory.'
+    value: ${{ steps.extract.outputs.min-framework-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Extract plugin metadata
+      id: extract
+      shell: pwsh
+      env:
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_PACKAGE: ${{ inputs.package }}
+      run: pwsh -File "${{ github.action_path }}/scripts/get-plugin-metadata.ps1"

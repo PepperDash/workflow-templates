@@ -1,0 +1,132 @@
+name: Essentials build — 3-Series (net35)
+
+# Reusable build for Essentials / Core itself (NOT a plugin) targeting 3-Series /
+# .NET CF 3.5. Builds inside the pepperdash/sspbuilder Docker image on the
+# self-hosted dmz-windows-2019 group. Replaces essentials-3Series-builds.yml.
+#
+# Core lane differences vs the plugin lane: no get-project-info, no Essentials
+# version prefix, NO check-package-name. Keeps .dll artifacts and packs from the
+# repo's checked-in .nuspec (copy-build-output exports NUSPEC_FILE).
+#
+# Tag/release safety: the Docker compile step is NOT continue-on-error;
+# upload-release and the publish steps are gated on success(). Pair with
+# getversion.yml (no tag/release up front).
+#
+# NOTE (pre-merge): action refs are pinned to the feature branch for testing.
+# Flip every "@refactor/workflow-modularization-49" to "@main" before merging.
+
+on:
+  workflow_call:
+    inputs:
+      newVersion:
+        description: 'New version? ("true" to release)'
+        required: true
+        type: string
+      version:
+        description: 'Plain semver from getversion, e.g. 2.3.1'
+        required: true
+        type: string
+      tag:
+        description: 'Plain semver tag from getversion, e.g. v2.3.1'
+        required: true
+        type: string
+      channel:
+        description: 'Release channel (empty = Release, otherwise Debug/prerelease)'
+        required: true
+        type: string
+      cleanupFailedRelease:
+        description: >
+          Run cleanup-failed-release on failure. Off by default: it is a bash+gh
+          step and the dmz-windows-2019 group is not guaranteed to have either.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
+
+jobs:
+  build:
+    name: Build Essentials/Core (3-Series net35)
+    runs-on:
+      group: dmz-windows-2019
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        shell: bash
+        run: git fetch --tags
+
+      - name: Get solution info
+        id: sln
+        uses: PepperDash/workflow-templates/.github/actions/get-sln-info@refactor/workflow-modularization-49
+        with:
+          filter: '*.3Series.sln'
+
+      - name: Update AssemblyInfo
+        uses: PepperDash/workflow-templates/.github/actions/update-assembly-info@refactor/workflow-modularization-49
+        with:
+          version: ${{ inputs.version }}
+
+      - name: Build solution (Docker sspbuilder)
+        uses: PepperDash/workflow-templates/.github/actions/docker-build-3series@refactor/workflow-modularization-49
+        with:
+          solution-path: ${{ steps.sln.outputs.solution-path }}
+          build-type: ${{ env.BUILD_TYPE }}
+          dockerhub-user: ${{ secrets.DOCKERHUB_USER }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Clean up after failed build
+        if: failure() && inputs.cleanupFailedRelease
+        uses: PepperDash/workflow-templates/.github/actions/cleanup-failed-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ inputs.tag }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy build output
+        if: success()
+        uses: PepperDash/workflow-templates/.github/actions/copy-build-output@refactor/workflow-modularization-49
+        with:
+          version: ${{ inputs.version }}
+          build-type: ${{ env.BUILD_TYPE }}
+          extensions: '.cpz .clz'
+          include-dll: 'true'
+          rename-mode: 'essentials'
+          copy-nuspec: 'true'
+
+      - name: Pack NuGet package
+        if: success() && env.NUSPEC_FILE != ''
+        uses: PepperDash/workflow-templates/.github/actions/pack-nuget@refactor/workflow-modularization-49
+        with:
+          nuspec-file: ${{ env.NUSPEC_FILE }}
+          version: ${{ inputs.version }}
+
+      - name: Upload release
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/upload-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ inputs.tag }}
+          artifacts: 'output\*.*(cpz|cplz|clz)'
+          prerelease: ${{ inputs.channel != '' }}
+
+      - name: Publish to GitHub feed
+        if: success() && inputs.newVersion == 'true' && env.NUSPEC_FILE != ''
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-github@refactor/workflow-modularization-49
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NuGet.org
+        if: success() && inputs.newVersion == 'true' && env.NUSPEC_FILE != ''
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-org@refactor/workflow-modularization-49
+        with:
+          nuget-api-key: ${{ secrets.NUGET_API_KEY }}

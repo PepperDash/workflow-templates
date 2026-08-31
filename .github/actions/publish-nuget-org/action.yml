@@ -1,0 +1,30 @@
+name: Publish to NuGet.org
+description: >
+  Pushes every .nupkg in the output dir to nuget.org — but ONLY when the repo is
+  owned by PepperDash AND is public. This runtime gate is fail-closed and is the
+  single source of truth for public publishing; there is no caller opt-in.
+
+inputs:
+  nuget-api-key:
+    description: 'nuget.org API key.'
+    required: true
+  output-dir:
+    description: 'Directory containing the .nupkg files.'
+    required: false
+    default: 'output'
+  required-owner:
+    description: 'Owner allowed to publish publicly (case-insensitive).'
+    required: false
+    default: 'pepperdash'
+
+runs:
+  using: composite
+  steps:
+    - name: Push to NuGet.org (public PepperDash repos only)
+      shell: pwsh
+      env:
+        INPUT_NUGET_API_KEY: ${{ inputs.nuget-api-key }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_REQUIRED_OWNER: ${{ inputs.required-owner }}
+        GH_REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+      run: pwsh -File "${{ github.action_path }}/scripts/publish-nuget-org.ps1"

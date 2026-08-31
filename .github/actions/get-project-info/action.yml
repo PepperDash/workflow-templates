@@ -1,0 +1,47 @@
+name: Get project info
+description: >
+  Derives make / model / title / NuGet package id from the repository name using
+  the PepperDash EPI naming convention (org/epi-make-model[-variant]).
+
+inputs:
+  package-prefix:
+    description: 'NuGet id prefix for plugin repos.'
+    required: false
+    default: 'PepperDash.Essentials.Plugins.'
+  package-style:
+    description: >
+      "dotted" -> <prefix>Make.Model (TitleCased, matches the plugin namespace and
+      check-package-name). "concatenated" -> <prefix>MakeModel (legacy 3-Series).
+    required: false
+    default: 'dotted'
+
+outputs:
+  make:
+    description: 'Manufacturer segment.'
+    value: ${{ steps.parse.outputs.make }}
+  model:
+    description: 'Model segment (empty for non-plugin repos).'
+    value: ${{ steps.parse.outputs.model }}
+  title:
+    description: 'Human-readable title.'
+    value: ${{ steps.parse.outputs.title }}
+  package:
+    description: 'NuGet package id.'
+    value: ${{ steps.parse.outputs.package }}
+  repo-is-plugin:
+    description: '"true" when the repo name resolves to a plugin (make + model).'
+    value: ${{ steps.parse.outputs.repo-is-plugin }}
+  repo-name:
+    description: 'Repository name without the owner.'
+    value: ${{ steps.parse.outputs.repo-name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse repository name
+      id: parse
+      shell: pwsh
+      env:
+        INPUT_PACKAGE_PREFIX: ${{ inputs.package-prefix }}
+        INPUT_PACKAGE_STYLE: ${{ inputs.package-style }}
+      run: pwsh -File "${{ github.action_path }}/scripts/get-project-info.ps1"

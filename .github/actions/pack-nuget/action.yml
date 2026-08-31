@@ -1,0 +1,29 @@
+name: Pack NuGet package
+description: Runs `nuget pack` for a nuspec unless it is the EssentialsPluginTemplate.
+
+inputs:
+  nuspec-file:
+    description: 'Nuspec base name (without .nuspec). Resolved from the repo root.'
+    required: true
+  version:
+    description: 'Package version.'
+    required: true
+  output-dir:
+    description: 'Output directory for the .nupkg.'
+    required: false
+    default: 'output'
+
+runs:
+  using: composite
+  steps:
+    - name: Add nuget.exe
+      if: ${{ !contains(inputs.nuspec-file, 'EssentialsPluginTemplate') }}
+      uses: nuget/setup-nuget@v4
+
+    - name: nuget pack
+      shell: pwsh
+      env:
+        INPUT_NUSPEC_FILE: ${{ inputs.nuspec-file }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: pwsh -File "${{ github.action_path }}/scripts/pack-nuget.ps1"

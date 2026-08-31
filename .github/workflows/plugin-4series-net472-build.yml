@@ -1,0 +1,185 @@
+name: Plugin build — 4-Series (net472)
+
+# Reusable build for an Essentials plugin (EPI) targeting 4-Series / .NET Framework 4.72.
+# Composes the shared composite actions in .github/actions/.
+#
+# Tag/release safety: nothing is tagged, released, or published until the compile
+# step (dotnet-build, NOT continue-on-error) has succeeded. apply-essentials-
+# version-prefix only computes strings; upload-release and the publish steps are
+# all gated on `success()` so a build failure routes to cleanup-failed-release
+# instead. Pair with getversion.yml, which also creates no tag/release.
+#
+# Pairing requirement: use with getversion.yml (prefix-aware — it does NOT create
+# the git tag/release). This workflow applies the Essentials major version prefix
+# (major = EssentialsMajor*1000 + semverMajor, idempotent) and creates the
+# prefixed tag/release only after a successful build. Do not pair with
+# essentialsplugins-getversion.yml, which creates an unprefixed release up front.
+#
+# Legacy callers keep using essentialsplugins-4Series-builds.yml until they
+# migrate — see docs/migrating-callers.md.
+#
+# NOTE (pre-merge): action refs are pinned to the feature branch for testing.
+# Flip every "@refactor/workflow-modularization-49" to "@main" before merging.
+
+on:
+  workflow_call:
+    inputs:
+      newVersion:
+        description: 'New version? ("true" to release)'
+        required: true
+        type: string
+      version:
+        description: 'Plain semver from getversion, e.g. 2.3.1'
+        required: true
+        type: string
+      tag:
+        description: 'Plain semver tag from getversion, e.g. v2.3.1'
+        required: true
+        type: string
+      channel:
+        description: 'Release channel (empty = Release, otherwise Debug/prerelease)'
+        required: true
+        type: string
+      bypassPackageCheck:
+        description: 'Set true to skip the package-name check.'
+        required: false
+        type: boolean
+        default: false
+      devToolsVersion:
+        description: 'essentials-devtools release tag to embed in the CPZ. Empty to skip.'
+        required: false
+        type: string
+        default: ''
+      applyVersionPrefix:
+        description: 'Apply the Essentials major version prefix.'
+        required: false
+        type: boolean
+        default: true
+      essentialsMajor:
+        description: 'Override the detected Essentials major (blank = detect from .4Series.csproj).'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
+
+jobs:
+  build:
+    name: Build plugin (4-Series net472)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Apply Essentials version prefix
+        id: prefix
+        if: inputs.applyVersionPrefix
+        uses: PepperDash/workflow-templates/.github/actions/apply-essentials-version-prefix@refactor/workflow-modularization-49
+        with:
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag }}
+          essentials-major: ${{ inputs.essentialsMajor }}
+          csproj-filter: '*.4Series.csproj'
+
+      - name: Resolve effective version/tag
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ inputs.applyVersionPrefix }}" -eq "true") {
+            "version=${{ steps.prefix.outputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "tag=${{ steps.prefix.outputs.tag }}"         | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            "version=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "tag=${{ inputs.tag }}"         | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+      - name: Get solution info
+        id: sln
+        uses: PepperDash/workflow-templates/.github/actions/get-sln-info@refactor/workflow-modularization-49
+        with:
+          filter: '*.4Series.sln'
+
+      - name: Get plugin metadata
+        id: meta
+        uses: PepperDash/workflow-templates/.github/actions/get-plugin-metadata@refactor/workflow-modularization-49
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Build solution
+        uses: PepperDash/workflow-templates/.github/actions/dotnet-build@refactor/workflow-modularization-49
+        with:
+          solution-file: ${{ steps.sln.outputs.solution-file }}
+          build-type: ${{ env.BUILD_TYPE }}
+          version: ${{ steps.ver.outputs.version }}
+          repository-url: https://github.com/${{ github.repository }}
+          package-tags: ${{ steps.meta.outputs.type-names }}
+          release-notes: "${{ steps.meta.outputs.type-names-list != '' && format('Factory TypeNames: {0}', steps.meta.outputs.type-names-list) || '' }}"
+
+      - name: Clean up after failed build
+        if: failure()
+        uses: PepperDash/workflow-templates/.github/actions/cleanup-failed-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check package name
+        if: success()
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/check-package-name@refactor/workflow-modularization-49
+        with:
+          bypass: ${{ inputs.bypassPackageCheck }}
+
+      - name: Generate config schema
+        id: schema
+        if: success()
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/generate-config-schema@refactor/workflow-modularization-49
+        with:
+          assembly-name: ${{ steps.meta.outputs.assembly-name }}
+          build-type: ${{ env.BUILD_TYPE }}
+          output-dir: output/schemas
+
+      - name: Bundle schema into nupkg
+        if: success() && steps.schema.outputs.schema-count != '0' && steps.schema.outputs.schema-count != ''
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/add-files-to-nupkg@refactor/workflow-modularization-49
+        with:
+          source-dir: output/schemas
+          target-path: schemas
+          pattern: '*.schema.json'
+
+      - name: Embed devtools SPA
+        if: success()
+        uses: PepperDash/workflow-templates/.github/actions/embed-devtools-spa@refactor/workflow-modularization-49
+        with:
+          devtools-version: ${{ inputs.devToolsVersion }}
+
+      - name: Upload release
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/upload-release@refactor/workflow-modularization-49
+        with:
+          tag: ${{ steps.ver.outputs.tag }}
+          artifacts: 'output\**\*.*(cpz|cplz),output\schemas\*.schema.json'
+          prerelease: ${{ inputs.channel != '' }}
+
+      - name: Publish to GitHub feed
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-github@refactor/workflow-modularization-49
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NuGet.org
+        if: success() && inputs.newVersion == 'true'
+        continue-on-error: true
+        uses: PepperDash/workflow-templates/.github/actions/publish-nuget-org@refactor/workflow-modularization-49
+        with:
+          nuget-api-key: ${{ secrets.NUGET_API_KEY }}

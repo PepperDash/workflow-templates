@@ -1,0 +1,33 @@
+name: Get solution info
+description: >
+  Locates the solution file matching a filter and exposes its base name and the
+  repo-root-relative path (used by the Docker sspbuilder mount).
+
+inputs:
+  filter:
+    description: 'Glob for the solution file, e.g. "*.4Series.sln" or "*.3Series.sln".'
+    required: true
+
+outputs:
+  solution-file:
+    description: 'Solution file base name (no extension), e.g. "MyPlugin.4Series".'
+    value: ${{ steps.find.outputs.solution-file }}
+  solution-path:
+    description: 'Solution path relative to the repo root (4 path segments stripped), for c:\project mounts.'
+    value: ${{ steps.find.outputs.solution-path }}
+  solution-name:
+    description: 'Solution file name including extension.'
+    value: ${{ steps.find.outputs.solution-name }}
+  solution-dir:
+    description: 'Absolute directory containing the solution file.'
+    value: ${{ steps.find.outputs.solution-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find solution
+      id: find
+      shell: pwsh
+      env:
+        INPUT_FILTER: ${{ inputs.filter }}
+      run: pwsh -File "${{ github.action_path }}/scripts/get-sln-info.ps1"

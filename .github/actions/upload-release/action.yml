@@ -1,0 +1,68 @@
+name: Upload GitHub release
+description: >
+  Thin wrapper over ncipollo/release-action with the conventions shared by every
+  build workflow: allowUpdates, commit = github.sha, body from CHANGELOG.md.
+
+inputs:
+  tag:
+    description: 'Release tag.'
+    required: true
+  artifacts:
+    description: 'Glob(s) of artifacts to attach.'
+    required: true
+  prerelease:
+    description: '"true" for a prerelease.'
+    required: false
+    default: 'false'
+  body-file:
+    description: 'Path to the release body.'
+    required: false
+    default: './CHANGELOG.md'
+  download-change-log:
+    description: 'Download the "change-log" artifact from getversion first.'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+      run: bash "${{ github.action_path }}/scripts/validate.sh"
+
+    - name: Get release notes
+      if: inputs.download-change-log == 'true'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: change-log
+
+    - name: Ensure a body file exists
+      shell: bash
+      env:
+        INPUT_BODY_FILE: ${{ inputs.body-file }}
+        INPUT_TAG: ${{ inputs.tag }}
+      run: bash "${{ github.action_path }}/scripts/ensure-body.sh"
+
+    - name: Upload release
+      id: release
+      uses: ncipollo/release-action@v1
+      with:
+        allowUpdates: true
+        artifacts: ${{ inputs.artifacts }}
+        prerelease: ${{ inputs.prerelease }}
+        tag: ${{ inputs.tag }}
+        commit: ${{ github.sha }}
+        bodyFile: ${{ inputs.body-file }}
+
+    - name: Report
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ steps.release.outcome }}" = "success" ]; then
+          echo "- Release \`${{ inputs.tag }}\` uploaded." >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "❌ Release \`${{ inputs.tag }}\` upload failed (${{ steps.release.outcome }})." >> "$GITHUB_STEP_SUMMARY"
+        fi

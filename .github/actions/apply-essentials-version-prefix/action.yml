@@ -1,0 +1,50 @@
+name: Apply Essentials version prefix
+description: >
+  Encodes PepperDash Essentials compatibility into the plugin Major version:
+  prefixed_major = (Essentials major * 1000) + (semver major % 1000). See
+  .github/instructions/versioning-plan.instructions.md. Idempotent — re-applying
+  to an already-prefixed version is a no-op.
+
+inputs:
+  version:
+    description: 'Plain semver from getversion, e.g. "2.3.1" or "2.3.1-beta.1".'
+    required: true
+  tag:
+    description: 'Plain semver tag from getversion, e.g. "v2.3.1". Optional.'
+    required: false
+    default: ''
+  essentials-major:
+    description: >
+      Essentials major to encode. Use "1" for 3-Series (always Essentials v1).
+      Leave empty for 4-Series to auto-detect from the .4Series.csproj
+      PepperDashEssentials PackageReference.
+    required: false
+    default: ''
+  csproj-filter:
+    description: 'Glob for the csproj to read when auto-detecting.'
+    required: false
+    default: '*.4Series.csproj'
+
+outputs:
+  version:
+    description: 'Prefixed version, e.g. "2002.3.1".'
+    value: ${{ steps.prefix.outputs.version }}
+  tag:
+    description: 'Prefixed tag, e.g. "v2002.3.1".'
+    value: ${{ steps.prefix.outputs.tag }}
+  essentials-major:
+    description: 'The Essentials major that was applied.'
+    value: ${{ steps.prefix.outputs.essentials-major }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute prefixed version
+      id: prefix
+      shell: pwsh
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_ESSENTIALS_MAJOR: ${{ inputs.essentials-major }}
+        INPUT_CSPROJ_FILTER: ${{ inputs.csproj-filter }}
+      run: pwsh -File "${{ github.action_path }}/scripts/apply-version-prefix.ps1"

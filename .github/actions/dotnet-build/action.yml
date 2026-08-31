@@ -1,0 +1,56 @@
+name: dotnet build solution
+description: >
+  Runs `dotnet build` for a 4-Series solution, captures the log as an artifact,
+  and writes a build summary. Fails the step on a non-zero exit code.
+
+inputs:
+  solution-file:
+    description: 'Solution base name (no extension); "<name>.sln" is built from the repo root.'
+    required: true
+  build-type:
+    description: 'Configuration: Release or Debug.'
+    required: true
+  version:
+    description: 'Value passed as /p:Version.'
+    required: true
+  extra-args:
+    description: 'Additional msbuild/dotnet args appended verbatim.'
+    required: false
+    default: ''
+  package-tags:
+    description: 'Space-separated tags to inject as /p:PackageTags (SDK pack).'
+    required: false
+    default: ''
+  repository-url:
+    description: 'Value for /p:RepositoryUrl and /p:PackageProjectUrl.'
+    required: false
+    default: ''
+  release-notes:
+    description: 'Value for /p:PackageReleaseNotes (e.g. "Factory TypeNames: a, b").'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Build
+      id: build
+      shell: pwsh
+      env:
+        INPUT_SOLUTION_FILE: ${{ inputs.solution-file }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
+        INPUT_PACKAGE_TAGS: ${{ inputs.package-tags }}
+        INPUT_REPOSITORY_URL: ${{ inputs.repository-url }}
+        INPUT_RELEASE_NOTES: ${{ inputs.release-notes }}
+      run: pwsh -File "${{ github.action_path }}/scripts/dotnet-build.ps1"
+
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: build-output-log
+        path: build-output.log
+        retention-days: 30
+        if-no-files-found: ignore

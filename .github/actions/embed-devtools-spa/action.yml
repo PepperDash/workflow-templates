@@ -1,0 +1,25 @@
+name: Embed essentials-devtools SPA
+description: >
+  Downloads an essentials-devtools release zip and embeds it (stored, uncompressed)
+  as essentials-devtools.zip inside every .cpz under ./output. No-op when
+  devtools-version is empty.
+
+inputs:
+  devtools-version:
+    description: 'essentials-devtools release tag, e.g. v1.0.0. Empty to skip.'
+    required: false
+    default: ''
+  output-dir:
+    description: 'Directory containing the built .cpz files.'
+    required: false
+    default: 'output'
+
+runs:
+  using: composite
+  steps:
+    - name: Embed SPA
+      shell: pwsh
+      env:
+        INPUT_DEVTOOLS_VERSION: ${{ inputs.devtools-version }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: pwsh -File "${{ github.action_path }}/scripts/embed-devtools-spa.ps1"
