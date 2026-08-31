@@ -16,7 +16,8 @@
 param(
   [switch]$SkipPester,
   [switch]$SkipDotnet,
-  [switch]$SkipActionlint
+  [switch]$SkipActionlint,
+  [switch]$SkipWorkflowSmoke
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,6 +54,12 @@ if (-not $SkipDotnet) {
   } else {
     Write-Warning 'dotnet not found; skipping SchemaGen build (its Pester test self-skips too).'
   }
+}
+
+if (-not $SkipWorkflowSmoke) {
+  Section 'Workflow dry-run smoke (all lanes, offline steps)'
+  & (Join-Path $PSScriptRoot 'run-workflow-local.ps1') -All
+  if ($LASTEXITCODE -ne 0) { $failures.Add('run-workflow-local.ps1 -All failed') }
 }
 
 if (-not $SkipActionlint) {

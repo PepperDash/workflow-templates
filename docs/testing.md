@@ -9,7 +9,8 @@ published.
 |---|---|---|
 | Every composite-action script (inputs → outputs / summary / exit code) | Pester 5 | `tests/pester/*.Tests.ps1` |
 | Build-workflow structure ("no publish before a green build", getversion creates no tag) | Pester 5 + `powershell-yaml` | `tests/pester/workflow-structure.Tests.ps1` |
-| The config-schema generator (`SchemaGen`) | xUnit | `tests/SchemaGen.Tests/` |
+| The config-schema generator (`SchemaGen`) | Pester 5 (builds a fixture, runs the built tool) | `tests/pester/schema-gen-tool.Tests.ps1` |
+| Whole build lane, composed end-to-end (offline steps run for real, publish steps dry-run) | `pwsh` | `tests/run-workflow-local.ps1` |
 | Workflow YAML lint | `actionlint` | `.github/workflows/*.yml` |
 
 ## Prerequisites
@@ -26,8 +27,8 @@ published.
 pwsh tests/run-all.ps1
 ```
 
-Options: `-SkipDotnet`, `-SkipActionlint`, `-SkipPester`. A JUnit report is
-written to `test-results.xml`.
+Options: `-SkipDotnet`, `-SkipActionlint`, `-SkipPester`, `-SkipWorkflowSmoke`.
+A JUnit report is written to `test-results.xml`.
 
 ## Run a subset
 
@@ -39,8 +40,41 @@ Invoke-Pester tests/pester/apply-essentials-version-prefix.Tests.ps1 -Output Det
 Invoke-Pester tests/pester/workflow-structure.Tests.ps1
 
 # the schema generator
-dotnet test tests/SchemaGen.Tests
+Invoke-Pester tests/pester/schema-gen-tool.Tests.ps1
 ```
+
+## Dry-run a whole build workflow — `tests/run-workflow-local.ps1`
+
+Executes the real composite-action scripts, in the order a build workflow calls
+them, threading each step's outputs / env into the next — but on your machine,
+with **no GitHub, no runner, and nothing published**.
+
+```pwsh
+# smoke-test every lane against a generated fixture (part of run-all.ps1)
+pwsh tests/run-workflow-local.ps1 -All
+
+# dry-run one lane against a real local checkout
+pwsh tests/run-workflow-local.ps1 -Workflow plugin-4series-net8 `
+     -RepoPath ../epi-lg-display -Repo epi-lg-display -Version 2.3.1
+
+# also compile for real (needs the .NET SDK; still publishes nothing)
+pwsh tests/run-workflow-local.ps1 -Workflow essentials-4series-net8 `
+     -RepoPath ../Essentials -Repo Essentials -RunBuild
+```
+
+Step classes:
+
+| Class | Behaviour |
+|---|---|
+| `offline` | run for real — `get-sln-info`, `get-project-info`, `apply-essentials-version-prefix`, `get-plugin-metadata`, `update-assembly-info`, `create-nuspec` |
+| `needs-build` | run only if a compile happened this session — `copy-build-output`, `check-package-name`, `add-files-to-nupkg` |
+| `build` | dry-run unless `-RunBuild` — `dotnet-build`, `pack-nuget`, `generate-config-schema` |
+| `docker` | dry-run unless `-RunDocker` — `docker-build-3series` |
+| `dry-always` | never executed — `upload-release`, `publish-nuget-github`, `embed-devtools-spa`, `cleanup-failed-release`. For `publish-nuget-org` the fail-closed `owner == pepperdash && visibility == public` gate is evaluated and printed. |
+
+Useful flags: `-Owner` / `-Visibility` (exercise the nuget.org gate),
+`-Channel Debug`, `-PackageStyle dotted`, `-ApplyVersionPrefix:$false`,
+`-KeepWorkspace` (leave the throwaway workspace on disk to inspect).
 
 ## How the harness works
 
