@@ -53,7 +53,10 @@ def extract_factory_config(file_content, supported_types):
     if not supported_types:
         return None
     uncommented_content = re.sub(r'//.*', '', file_content)
-    match = re.search(r'\.ToObject\s*<\s*([A-Za-z_]\w*)\s*>', uncommented_content)
+    # Only the root conversion of the device properties (dc.Properties.ToObject<T>()). A sub-object
+    # (dc.Properties["mock"].ToObject<T>(), someToken.ToObject<T>()) or a helper's conversion is not
+    # the device config; without a root conversion the caller falls back to the *Config heuristic.
+    match = re.search(r'\bProperties\s*\.\s*ToObject\s*<\s*([A-Za-z_]\w*)\s*>', uncommented_content)
     if not match:
         return None
     logging.debug(f"Factory config: type '{supported_types[0]}' uses class '{match.group(1)}'.")
