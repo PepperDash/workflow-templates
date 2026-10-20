@@ -30,8 +30,10 @@ def extract_supported_types(file_content):
     # Remove commented lines
     uncommented_content = re.sub(r'//.*', '', file_content)
     
-    # Updated regex to match TypeNames initialization
-    types_pattern = re.compile(r'TypeNames\s*=\s*new\s*List<string>\(\)\s*{([^}]+)}')
+    # Match every common TypeNames initializer: new List<string>() { ... }, new List<string> { ... }
+    # (no parentheses), new string[] { ... }, new[] { ... } and target-typed new() { ... }
+    types_pattern = re.compile(
+        r'TypeNames\s*=\s*new\s*(?:List<string>|string\s*\[\s*\]|\[\s*\])?\s*(?:\(\s*\))?\s*{([^}]+)}')
     matches = types_pattern.findall(uncommented_content)
     types = []
     for match in matches:
@@ -39,10 +41,26 @@ def extract_supported_types(file_content):
         types.extend(current_types)
         logging.debug(f"Current types extracted: {current_types}")
 
-    # Remove duplicates and filter out unnecessary entries
-    unique_types = list(set(filter(None, types)))
+    # Remove duplicates and empty entries, keeping declaration order (a set() would scramble it,
+    # so the README churned and the sample config's type changed from run to run)
+    unique_types = remove_duplicates_preserve_order(list(filter(None, types)))
     logging.debug(f"Unique supported types: {unique_types}")
     return unique_types
+
+def extract_factory_config(file_content, supported_types):
+    """A factory names its device's config class in dc.Properties.ToObject<T>(). Pair that class with
+    the factory's first registered type, so the sample uses the real config, whatever its name."""
+    if not supported_types:
+        return None
+    uncommented_content = re.sub(r'//.*', '', file_content)
+    # Only the root conversion of the device properties (dc.Properties.ToObject<T>()). A sub-object
+    # (dc.Properties["mock"].ToObject<T>(), someToken.ToObject<T>()) or a helper's conversion is not
+    # the device config; without a root conversion the caller falls back to the *Config heuristic.
+    match = re.search(r'\bProperties\s*\.\s*ToObject\s*<\s*([A-Za-z_]\w*)\s*>', uncommented_content)
+    if not match:
+        return None
+    logging.debug(f"Factory config: type '{supported_types[0]}' uses class '{match.group(1)}'.")
+    return (supported_types[0], match.group(1))
 
 def extract_minimum_essentials_framework_version(file_content):
     logging.debug("Extracting minimum Essentials Framework version.")
@@ -115,6 +133,7 @@ def read_files_in_directory(directory):
     all_interfaces = []
     all_base_classes = []
     all_supported_types = []
+    all_factory_configs = []
     all_minimum_versions = []
     all_public_methods = []
     all_feedbacks = {
@@ -123,7 +142,10 @@ def read_files_in_directory(directory):
         'string_feedbacks': []
     }
 
-    for root, _, files in os.walk(directory):
+    for root, dirs, files in os.walk(directory):
+        # os.walk order depends on the filesystem; sort so the README (and the sample's type) is stable
+        dirs.sort()
+        files.sort()
         logging.debug(f"Entering directory: {root}")
         for file in files:
             if file.endswith('.cs'):
@@ -142,6 +164,9 @@ def read_files_in_directory(directory):
                         all_interfaces.extend(interfaces)
                         all_base_classes.extend(base_classes)
                         all_supported_types.extend(supported_types)
+                        factory_config = extract_factory_config(content, supported_types)
+                        if factory_config:
+                            all_factory_configs.append(factory_config)
                         if minimum_version:
                             all_minimum_versions.append(minimum_version)
                         all_public_methods.extend(public_methods)
@@ -162,6 +187,7 @@ def read_files_in_directory(directory):
         "interfaces": all_interfaces,
         "base_classes": all_base_classes,
         "supported_types": all_supported_types,
+        "factory_configs": all_factory_configs,
         "minimum_versions": all_minimum_versions,
         "public_methods": all_public_methods,
         "feedbacks": all_feedbacks
@@ -179,7 +205,10 @@ def read_class_names_and_bases_from_files(directory):
         r'\s*\{',                         # Opening brace
         re.MULTILINE
     )
-    for root, _, files in os.walk(directory):
+    for root, dirs, files in os.walk(directory):
+        # os.walk order depends on the filesystem; sort so the README (and the sample's type) is stable
+        dirs.sort()
+        files.sort()
         logging.debug(f"Entering directory: {root}")
         for file in files:
             if file.endswith('.cs'):
@@ -372,7 +401,10 @@ def parse_all_classes(directory):
         r'\{[^}]*?\}',                      # Property body
         re.MULTILINE | re.DOTALL
     )
-    for root, _, files in os.walk(directory):
+    for root, dirs, files in os.walk(directory):
+        # os.walk order depends on the filesystem; sort so the README (and the sample's type) is stable
+        dirs.sort()
+        files.sort()
         logging.debug(f"Entering directory: {root}")
         for file in files:
             if file.endswith('.cs'):
@@ -391,7 +423,10 @@ def parse_all_classes(directory):
                         properties = []
                         for prop_match in property_pattern.finditer(class_body):
                             prop_string = prop_match.group(0)
-                            json_property_match = re.search(r'\[JsonProperty\("([^"]+)"\)\]', prop_string)
+                            # Matches [JsonProperty("name")], [JsonProperty("name", NullValueHandling = ...)]
+                            # and [JsonProperty(PropertyName = "name")]
+                            json_property_match = re.search(
+                                r'\[JsonProperty\(\s*(?:PropertyName\s*=\s*)?"([^"]+)"[^\]]*\)\]', prop_string)
                             json_property_name = json_property_match.group(1) if json_property_match else None
                             prop_type = prop_match.group(1).strip()
                             prop_name = prop_match.group(2)
@@ -423,6 +458,42 @@ def extract_class_body(content, start_index):
     logging.debug(f"Class body extracted. Length: {len(class_body)} characters.")
     return class_body, index - 1
 
+# Returned for a type the generator can't produce a valid value for. The property is left out of the
+# sample instead: an omitted optional property still deserializes, a wrong-typed placeholder never does.
+OMIT = object()
+
+NUMERIC_TYPES = {
+    'int', 'uint', 'long', 'ulong', 'short', 'ushort', 'byte', 'sbyte', 'float', 'double', 'decimal',
+    'Int16', 'UInt16', 'Int32', 'UInt32', 'Int64', 'UInt64', 'Byte', 'SByte', 'Single', 'Double', 'Decimal',
+}
+
+# Essentials types plugin configs commonly embed. They are defined in Essentials, not the plugin,
+# so the class scan never sees them; these are valid, minimal examples of each.
+ESSENTIALS_TYPE_SAMPLES = {
+    'ControlPropertiesConfig': lambda: {
+        "method": "com",
+        "controlPortDevKey": "processor",
+        "controlPortNumber": 1,
+        "comParams": {
+            "protocol": "RS232",
+            "baudRate": 9600,
+            "dataBits": 8,
+            "stopBits": 1,
+            "parity": "None",
+            "softwareHandshake": "None",
+            "hardwareHandshake": "None",
+            "pacing": 0
+        }
+    },
+    'CommunicationMonitorConfig': lambda: {
+        "pollInterval": 30000,
+        "timeToWarning": 120000,
+        "timeToError": 300000,
+        "pollString": ""
+    },
+}
+ESSENTIALS_TYPE_SAMPLES['EssentialsControlPropertiesConfig'] = ESSENTIALS_TYPE_SAMPLES['ControlPropertiesConfig']
+
 def generate_sample_value(property_type, class_defs, processed_classes=None):
     if processed_classes is None:
         processed_classes = set()
@@ -431,7 +502,7 @@ def generate_sample_value(property_type, class_defs, processed_classes=None):
     property_type = property_type.rstrip('?')
     logging.debug(f"Generating sample value for type '{property_type}'.")
     # Handle primitive types
-    if property_type in ('int', 'long', 'float', 'double', 'decimal'):
+    if property_type in NUMERIC_TYPES:
         return 0
     elif property_type == 'string':
         return "SampleString"
@@ -442,13 +513,16 @@ def generate_sample_value(property_type, class_defs, processed_classes=None):
     # Handle collections
     elif property_type.startswith('List<') or property_type.startswith('IList<') or property_type.startswith('IEnumerable<') or property_type.startswith('ObservableCollection<'):
         inner_type = property_type[property_type.find('<')+1:-1]
-        return [generate_sample_value(inner_type, class_defs, processed_classes)]
+        inner_sample = generate_sample_value(inner_type, class_defs, processed_classes)
+        return [] if inner_sample is OMIT else [inner_sample]
     elif property_type.startswith('Dictionary<'):
         types = property_type[property_type.find('<')+1:-1].split(',')
         key_type = types[0].strip()
         value_type = types[1].strip()
         key_sample = generate_sample_value(key_type, class_defs, processed_classes)
         value_sample = generate_sample_value(value_type, class_defs, processed_classes)
+        if key_sample is OMIT or value_sample is OMIT:
+            return {}
         return { key_sample: value_sample }
     # Handle custom classes
     elif property_type in class_defs:
@@ -462,19 +536,31 @@ def generate_sample_value(property_type, class_defs, processed_classes=None):
         for prop in properties:
             prop_name = prop['json_property_name']
             prop_type = prop['property_type']
-            sample_obj[prop_name] = generate_sample_value(prop_type, class_defs, processed_classes)
+            value = generate_sample_value(prop_type, class_defs, processed_classes)
+            if value is OMIT:
+                logging.debug(f"Leaving '{prop_name}' ({prop_type}) out of the sample: no valid value for that type.")
+                continue
+            sample_obj[prop_name] = value
         processed_classes.remove(property_type)
         return sample_obj
+    elif property_type in ESSENTIALS_TYPE_SAMPLES:
+        return ESSENTIALS_TYPE_SAMPLES[property_type]()
     else:
-        # Unknown type, default to a sample value
-        logging.debug(f"Unknown type '{property_type}', using default sample value.")
-        return "SampleValue"
+        # Unknown type (an enum, an Essentials or third-party class, ...). Never emit a string
+        # placeholder for it: that can't deserialize into a non-string type.
+        logging.debug(f"Unknown type '{property_type}', leaving it out of the sample.")
+        return OMIT
 
 def generate_sample_config(config_class_name, class_defs, supported_types):
     logging.debug(f"Generating sample config for class '{config_class_name}'.")
     type_name = config_class_name[:-6]  # Remove 'Config'
-    if type_name not in supported_types:
-        type_name = supported_types[0] if supported_types else type_name
+    # Essentials looks types up case-insensitively, so prefer the registered spelling of a matching
+    # name; otherwise use the first registered type rather than an unregistered class-derived name
+    matching = [t for t in supported_types if t.lower() == type_name.lower()]
+    if matching:
+        type_name = matching[0]
+    elif supported_types:
+        type_name = supported_types[0]
     config = {
         "key": "GeneratedKey",
         "uid": 1,
@@ -550,6 +636,7 @@ if __name__ == "__main__":
     # Generate markdown sections with titles using the deduplicated lists
     interfaces_markdown = generate_markdown_list(unique_interfaces, "Interfaces Implemented")
     base_classes_markdown = generate_markdown_list(unique_base_classes, "Base Classes")
+    results["supported_types"] = remove_duplicates_preserve_order(results["supported_types"])
     supported_types_markdown = generate_markdown_list(results["supported_types"], "Supported Types")
     minimum_versions_markdown = generate_markdown_list(results["minimum_versions"], "Minimum Essentials Framework Versions")
     public_methods_markdown = generate_markdown_list(results["public_methods"], "Public Methods")
@@ -568,8 +655,17 @@ if __name__ == "__main__":
 
     # Generate Config Example markdown
     all_class_defs = parse_all_classes(project_directory)
+    # Prefer the class a factory actually deserializes (ToObject<T>), with that factory's type: config
+    # classes aren't always named *Config (e.g. MarantzProps), and the largest *Config class can be a
+    # nested item rather than the device's config
+    factory_config = next(
+        ((type_name, cls) for type_name, cls in results["factory_configs"] if cls in all_class_defs), None)
     config_classes = [cls for cls in all_class_defs if cls.endswith('Config') or cls.endswith('ConfigObject')]
-    if not config_classes:
+    if factory_config:
+        factory_type, main_config_class = factory_config
+        sample_config = generate_sample_config(main_config_class, all_class_defs, [factory_type])
+        config_example_markdown = generate_config_example_markdown(sample_config)
+    elif not config_classes:
         logging.warning("No config classes found.")
         config_example_markdown = ""
     else:
