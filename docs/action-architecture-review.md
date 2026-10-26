@@ -82,7 +82,7 @@ Per-action tags in a monorepo give the independent update timing the requirement
 
 ### 2.5 Mechanics for Option B
 
-- **Release automation.** release-please in monorepo (manifest) mode can cut per-action releases and tags from conventional commits. The repo already uses conventional commits and semantic-release elsewhere (see §4). Evaluate fit against the existing release tooling.
+- **Release automation.** [release-please](https://github.com/googleapis/release-please-action) in monorepo (manifest) mode can cut per-action releases and tags from conventional commits. The repo already uses conventional commits and semantic-release elsewhere (see §4). Evaluate fit against the existing release tooling.
 - **Moving major tags.** Maintain `<action>/v1` as a moving tag for backward-compatible changes. Never move an exact version tag (`<action>/v1.2.3`).
 - **Breaking changes.** Release them under a new major (`<action>/v2`) and leave `v1` untouched.
 - **Verification before moving a major tag.** Run the dry-runner and Pester suite against both the old and new refs.
@@ -113,15 +113,41 @@ Inventory of all 19 actions plus third-party steps used by the workflows. "Publi
 
 | # | PepperDash action / step | Replace with | Effort | Notes |
 |---|---|---|---|---|
-| 1 | `essentialsplugins-builds.yml:232,248`: `fleskesvor/create-release@feature/support-target-commitish` and `actions/upload-release-asset@v1` | `ncipollo/release-action` | Low | **Highest priority.** One is a feature-branch ref of a third-party fork, the other is archived and deprecated. Every other lane already uses ncipollo. |
-| 2 | `jacobtomlinson/gha-find-replace` (4 uses; 2 pinned `@master`, 2 `@v3`) in `getversion.yml` and `essentialsplugins-getversion.yml` | Inline `sed` / `pwsh -replace`, or pass the branch to semantic-release via `--branches` | Low | Third-party dependency for a one-line substitution. `@master` is unpinned. |
-| 3 | `azure/docker-login@v2` (`docker-build-3series` plus workflow-level uses in `essentials-3Series-builds.yml:96`, `essentialsplugins-builds.yml:161`, `essentialsplugins-3Series-builds.yml:96`) | `docker/login-action` | Low | Replaces the login step only. The sspbuilder build itself stays custom. |
-| 4 | `publish-nuget-github` | `actions/setup-dotnet` with `source-url` + `NUGET_AUTH_TOKEN`, then `dotnet nuget push --skip-duplicate` | Low | Official, no extra action. The script is mostly a loop around `nuget push`. |
-| 5 | `publish-nuget-org` (the push step only) | `dotnet nuget push`, or `NuGet/login` for trusted publishing (OIDC) | Low–Med | OIDC removes the stored API key. Verify `NuGet/login` availability and nuget.org trusted-publishing setup for the org. **Keep the owner/public gate** (see §3.2). |
-| 6 | `pack-nuget` | Inline `nuget pack` or `dotnet pack` step (`nuget/setup-nuget` already used) | Low | About 5 lines plus the template-repo skip, which becomes an `if:`. |
-| 7 | `upload-release` (wrapper) | `ncipollo/release-action` directly | Low | The wrapper already calls it. The remaining value is changelog download, `validate.sh`, `ensure-body.sh`. Keep the wrapper only if those conventions should stay centralized. |
+| 1 | `essentialsplugins-builds.yml:232,248`: [`fleskesvor/create-release@feature/support-target-commitish`](https://github.com/fleskesvor/create-release) and [`actions/upload-release-asset@v1`](https://github.com/actions/upload-release-asset) | [`ncipollo/release-action`](https://github.com/ncipollo/release-action) | Low | **Highest priority.** One is a feature-branch ref of a fork last pushed 2020-06, the other is archived (2021-03). Every other lane already uses ncipollo. See §3.1.2 for the `softprops` alternative. |
+| 2 | [`jacobtomlinson/gha-find-replace`](https://github.com/jacobtomlinson/gha-find-replace) (4 uses; 2 pinned `@master`, 2 `@v3`) in `getversion.yml` and `essentialsplugins-getversion.yml` | Inline `sed` / `pwsh -replace`, or pass the branch to [semantic-release](https://github.com/semantic-release/semantic-release) via `--branches` | Low | Third-party dependency for a one-line substitution. `@master` is unpinned. Last release 2024-11. |
+| 3 | [`azure/docker-login@v2`](https://github.com/Azure/docker-login) (`docker-build-3series` plus workflow-level uses in `essentials-3Series-builds.yml:96`, `essentialsplugins-builds.yml:161`, `essentialsplugins-3Series-builds.yml:96`) | [`docker/login-action`](https://github.com/docker/login-action) | Low | Replaces the login step only. The sspbuilder build itself stays custom. `azure/docker-login` last released 2024-05; `docker/login-action` v4.7.0 was released 2026-10-23. |
+| 4 | `publish-nuget-github` | [`actions/setup-dotnet`](https://github.com/actions/setup-dotnet) with `source-url` + `NUGET_AUTH_TOKEN`, then `dotnet nuget push --skip-duplicate` | Low | Official, no extra action. The script is mostly a loop around `nuget push`. |
+| 5 | `publish-nuget-org` (the push step only) | `dotnet nuget push`, or [`NuGet/login`](https://github.com/NuGet/login) for trusted publishing (OIDC) | Low–Med | OIDC removes the stored API key. Verify `NuGet/login` behavior and nuget.org trusted-publishing setup for the org. **Keep the owner/public gate** (see §3.2). |
+| 6 | `pack-nuget` | Inline `nuget pack` or `dotnet pack` step ([`nuget/setup-nuget`](https://github.com/NuGet/setup-nuget) already used) | Low | About 5 lines plus the template-repo skip, which becomes an `if:`. |
+| 7 | `upload-release` (wrapper) | [`ncipollo/release-action`](https://github.com/ncipollo/release-action) directly | Low | The wrapper already calls it. The remaining value is changelog download, `validate.sh`, `ensure-body.sh`. Keep the wrapper only if those conventions should stay centralized. |
 | 8 | `dotnet-build` | Inline `dotnet build` | Low | Extras are the log artifact and the summary. Optional; reasonable to keep. |
-| 9 | `cleanup-failed-release` | Optional: `dev-drprasad/delete-tag-and-release` | Low | Third-party. The `gh` + `git` script is small and works. Recommendation: keep. |
+| 9 | `cleanup-failed-release` | **Keep** the `gh` + `git` script | — | The only public option found, [`dev-drprasad/delete-tag-and-release`](https://github.com/dev-drprasad/delete-tag-and-release), is **archived** (last push 2024-07). Do not adopt it. |
+
+#### 3.1.1 Maintenance evidence (GitHub repo metadata, checked 2026-10-26)
+
+Activity only. Security advisories and runner compatibility were not checked.
+
+| Action | Status | Last push | Latest release |
+|---|---|---|---|
+| `actions/upload-release-asset` | **Archived** | 2021-03-03 | — |
+| `fleskesvor/create-release` (fork) | Not archived, **inactive** | 2020-06-16 | — |
+| `azure/docker-login` | Not archived, stale | 2025-01-21 | v2 (2024-05-22) |
+| `jacobtomlinson/gha-find-replace` | Not archived, stale | 2026-03-09 | 3.0.5 (2024-11-06) |
+| `dev-drprasad/delete-tag-and-release` | **Archived** | 2024-07-13 | — |
+| `ncipollo/release-action` | Maintained | 2026-10-25 | v1.21.0 (2026-03-14) |
+| `softprops/action-gh-release` | Maintained | 2026-10-24 | v3.0.3 (2026-08-30) |
+| `docker/login-action` | Maintained | — | v4.7.0 (2026-10-23) |
+| `NuGet/login` | Maintained | 2026-10-13 | — |
+| `NuGet/setup-nuget` | Maintained | 2026-10-13 | — |
+| `microsoft/setup-msbuild` | Maintained | 2026-10-16 | — |
+
+#### 3.1.2 `ncipollo/release-action` vs. `softprops/action-gh-release`
+
+[`softprops/action-gh-release`](https://github.com/softprops/action-gh-release) is a viable alternative: actively maintained, MIT, and more widely used (5,785 stars vs 1,680; 123 open issues vs 12). Maintenance does not separate the two.
+
+**Recommendation: keep `ncipollo`.** It is already used in 7 places behind the tested `upload-release` wrapper, which sets `allowUpdates`, `commit` and `bodyFile`. Switching means re-verifying the update and retry behavior that `cleanup-failed-release` relies on. If the architect prefers `softprops`, change it once inside the `upload-release` wrapper so no workflow changes.
+
+Input names differ (from memory, not verified against the current README): `softprops` uses `files`, `body_path`, `target_commitish`; `ncipollo` uses `artifacts`, `bodyFile`, `commit`.
 
 ### 3.2 PepperDash-owned actions to keep (no public equivalent)
 
@@ -135,10 +161,10 @@ Inventory of all 19 actions plus third-party steps used by the workflows. "Publi
 | Borderline | `get-sln-info` | Could be an inline `Get-ChildItem`, but its outputs are shared across lanes. Recommendation: keep. |
 
 ### 3.3 Already using official or standard actions (no change)
-`actions/checkout`, `actions/upload-artifact`, `actions/download-artifact`, `actions/setup-dotnet`, `actions/setup-node`, `actions/setup-python`, `nuget/setup-nuget`, `microsoft/setup-msbuild`, `ncipollo/release-action`.
+[`actions/checkout`](https://github.com/actions/checkout), [`actions/upload-artifact`](https://github.com/actions/upload-artifact), [`actions/download-artifact`](https://github.com/actions/download-artifact), [`actions/setup-dotnet`](https://github.com/actions/setup-dotnet), [`actions/setup-node`](https://github.com/actions/setup-node), [`actions/setup-python`](https://github.com/actions/setup-python), [`nuget/setup-nuget`](https://github.com/NuGet/setup-nuget), [`microsoft/setup-msbuild`](https://github.com/microsoft/setup-msbuild), [`ncipollo/release-action`](https://github.com/ncipollo/release-action).
 
 ### 3.4 Versioning (`getversion.yml`)
-Version and changelog come from semantic-release run via `npx`, with `conventional-changelog-conventionalcommits` pinned to 9 (workflow comments document a template incompatibility with v10+). Public alternatives exist (`gittools/actions` GitVersion, `cycjimmy/semantic-release-action`).
+Version and changelog come from semantic-release run via `npx`, with `conventional-changelog-conventionalcommits` pinned to 9 (workflow comments document a template incompatibility with v10+). Public alternatives exist ([`GitTools/actions`](https://github.com/GitTools/actions) for GitVersion, [`cycjimmy/semantic-release-action`](https://github.com/cycjimmy/semantic-release-action)); both are actively maintained.
 
 **Recommendation: do not switch.** GitVersion changes how versions are derived and would lose the changelog output. The wrapper action makes the plugin-version pin harder to control.
 
@@ -147,7 +173,7 @@ Version and changelog come from semantic-release run via `npx`, with `convention
 2. Replace `gha-find-replace` (item 2).
 3. Swap `azure/docker-login` for `docker/login-action` (item 3).
 4. Retire `publish-nuget-github` and `pack-nuget` for inline `dotnet`/`nuget` steps (items 4, 6) and evaluate OIDC for nuget.org (item 5).
-5. Decide on the thin wrappers (items 7–9) after Decision 1, since the repo strategy affects how much a wrapper costs to maintain.
+5. Decide on the thin wrappers (items 7–8) after Decision 1, since the repo strategy affects how much a wrapper costs to maintain.
 
 ---
 
