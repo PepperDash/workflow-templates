@@ -189,7 +189,7 @@ Version and changelog come from semantic-release run via `npx`, with `convention
 | # | Decision | Recommended | Alternatives |
 |---|---|---|---|
 | D1 | Repository strategy | **B.** Monorepo with per-action tags, using release-please manifest mode | A: repo-wide semver (simplest). C: per-action repos only for actions with Marketplace, ownership, or separate-lifecycle needs |
-| D2 | Replacement list | Approve items 1–4 and 6; evaluate 5 (OIDC); defer 7–9 to after D1 | Keep wrappers for central conventions |
+| D2 | Replacement list | Approve items 1–4 and 6; evaluate 5 (OIDC); defer 7–8 to after D1; keep 9 (`cleanup-failed-release`) | Keep wrappers for central conventions |
 | D3 | Release automation for D1-B | release-please (monorepo/manifest) | Hand-managed tags with a documented script |
 | D4 | Third-party pinning policy | SHA pins, maintained by Dependabot | Tag pins for GitHub-owned actions only |
 
