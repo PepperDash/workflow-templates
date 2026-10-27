@@ -1,6 +1,6 @@
 # Workflow-templates → composite actions: review of #49 / PR #57 and migration plan
 
-Status: **draft for review** · Written 2026-10-27 · Supersedes `docs/workflow-modularization-plan.md` on `refactor/workflow-modularization-49` once agreed.
+Status: **draft v2** · Written 2026-10-27 · Decisions D1–D5 and D7–D12 recorded 2026-10-27; **all decisions D1–D12 recorded; next step is the D12 work breakdown**; D12 (work breakdown) follows once this plan is agreed · Supersedes `docs/workflow-modularization-plan.md` on `refactor/workflow-modularization-49` once agreed.
 
 Repos involved: `PepperDash/workflow-templates` (public), `PepperDash/essentials-build-tools` (internal; tools public on nuget.org), `PepperDash/EssentialsPluginTemplate`, `PepperDash/.github` (org starter workflows), ~115 consuming repos.
 
@@ -13,8 +13,8 @@ The direction in PR #57 is right: composite actions for in-job steps, reusable w
 1. **Re-scope.** Issue #49 is a one-paragraph naming proposal; PR #57 is ~4,900 lines and its description still says "plan only". Track the work as an epic and split the PR.
 2. **Drop `generate-config-schema` from the PR.** It contradicts a recorded decision (schema generation is `pd-schemagen` in essentials-build-tools, wired through the template's MSBuild targets, with no workflow-templates change).
 3. **Add a pinning and release policy before splitting repos.** About 115 repos call `@main`; the new workflows pin actions to a feature branch. Splitting actions into repos multiplies this problem unless versioned tags come first.
-4. **Split actions into repos in tiers**, not 16 repos on day one (section 5).
-5. **Treat essentials-build-tools as the source of truth for README badges and docs**, reached three ways: local build, commit-time hook, and a CI fallback that replaces `update-readme.yml` + `metadata.py` (section 6). DocFX is complementary, not a replacement (section 7).
+4. **One repo per action** (16 repos, `action-{descriptor}`), each independently versioned and releasable. Tiers (section 5.2) set the *order* of extraction, not a cut-off.
+5. **Treat essentials-build-tools as the source of truth for README badges and docs**, reached locally through VS Code tasks and MSBuild parameters, at commit time, and (bonus) in the cloud after a push. This replaces `update-readme.yml` and retires `metadata.py` (section 6). DocFX is deferred to a day-2/3 plan (section 7).
 
 **Blocking fact found while reviewing:** neither `PepperDash.Essentials.BuildTools.Readme` nor `...SchemaGen` is on nuget.org yet (both return 404), and the template branch `git-config-updates` already pins `readme` 0.1.0. Until the packages are published, any build of that branch fails at `dotnet tool restore`. Publishing is therefore Phase 0.
 
@@ -53,7 +53,7 @@ Severity: **H** = fix before merging anything, **M** = fix inside the plan, **L*
 | C4 | M | **Scope drift.** One naming issue became a 4,900-line PR. | Open an epic that links the issues in section 8, close #49 against the naming decision only, and split #57 into the PRs listed in Phase 2. |
 | C5 | M | **`continue-on-error: true` hides failed publishes.** `publish-nuget-org.ps1` correctly fails (`Stop-Action "Failed to push: …"`), but the lane marks the step `continue-on-error`, so the run is green when nuget.org push failed. A dev sees a green check and no package. | Keep the publish steps non-fatal (the job stays green), but add a final `if: always()` step that detects an expected publish that did not succeed and emits `::error::<message>` (names the registry, the package and the failing step) **and** appends the same message to `$GITHUB_STEP_SUMMARY`. The `::error::` workflow command creates a run annotation; the summary append puts the text on the job summary page, so a failed publish is identifiable without opening the step log. The job result is unchanged. Put this in one shared action (e.g. a `report-publish-status` step inside `upload-release`/`publish-nuget-*`) so every lane behaves the same. Make this explicit in section 4's release semantics. |
 | C6 | M | **Unpinned third-party refs.** `jacobtomlinson/gha-find-replace@master` (twice, in the legacy getversion), and `curl … rhysd/actionlint/main/…` in `self-test.yml`. | Pin by SHA. Prefer replacing `gha-find-replace` with a `sed`/pwsh step in the getversion action, since it only edits `.releaserc.json`. |
-| C7 | M | **`update-readme.yml` is fragile.** It checks out `workflow-templates` at `main`, runs `metadata.py` (regex parser, `logging.DEBUG` noise, `os.walk` order, every join marked `R`), and **force-pushes** `robot-docs`. Protected branches block bot pushes; concurrent runs on different branches overwrite each other. | Replace with a tool-based workflow that opens a PR (section 6.3). Retire `metadata.py`. |
+| C7 | M | **`update-readme.yml` is fragile.** It checks out `workflow-templates` at `main`, runs `metadata.py` (regex parser, `logging.DEBUG` noise, `os.walk` order, every join marked `R`), and **force-pushes** `robot-docs`. Protected branches block bot pushes; concurrent runs on different branches overwrite each other. | Replace with the essentials-build-tools C# tools (section 6): local VS Code tasks and build parameters first, optional cloud sync after push. Delete `update-readme.yml` and `metadata.py`. |
 | C8 | M | **Old files fail silently into deprecation.** The plan leaves legacy workflows untouched, so nothing tells consumers to migrate. | Add one `::warning::` step to each legacy workflow naming its replacement and the migration doc. Behaviour is unchanged. |
 | C9 | M | **Starter workflows not in scope.** `PepperDash/.github/workflow-templates/` is how new repos get callers. Without updating it, new repos keep landing on deprecated workflows. | Add to Phase 5. |
 | C10 | M | **`_common/action.ps1` (`../../_common`) is sourced by 21 scripts.** It cannot cross repo boundaries. | See section 5.3. |
@@ -83,25 +83,25 @@ What is already good and should be kept: composite-for-steps / reusable-for-jobs
 
 ### 5.1 Requirements and cost
 
-The request is one repo per action for easier maintenance. That is workable, and the layout is clean (`uses: PepperDash/action-publish-nuget-org@v1`, `action.yml` at repo root), but it is not free: each repo needs a release workflow, a ruleset, CODEOWNERS, Dependabot, tests and CI. At 16 repos that is a recurring maintenance load, so the plan phases it.
+**Decision (D2):** one repo per action, each manageable (versioned, released, rolled back, owned) without affecting another action or the workflows. The layout is clean (`uses: PepperDash/action-publish-nuget-org@v1`, `action.yml` at repo root), but each repo carries a release workflow, ruleset, CODEOWNERS, Dependabot, tests and CI. At 16 repos that is a recurring load, so the per-repo template (5.4) and tier ordering (5.2) keep it cheap.
+
+**Naming (D2/D3):** `PepperDash/action-{descriptor}`, descriptor is kebab-case, verb first, matching the action's current folder name: `action-publish-nuget-org`, `action-dotnet-build`, `action-create-nuspec`. Reasons for the `action-` prefix over a suffix or `gh-action-`: sorts together in the org list, mirrors the `uses:` line, and leaves the `essentials-*` / `pd-*` namespaces for products.
 
 Hard requirements:
 
-- Action repos must be **public**. Public plugin repos and forks must resolve them, and a public repo is readable by the org's private repos with no extra access setting. (An internal repo would not resolve for public consumers.)
+- Action repos must be **public** (D3 asked whether `internal` is possible; it is not, for this estate). The org is on the Enterprise plan, so the `internal` visibility exists, but: (1) a public repo cannot use an action from an internal repo, and public plugin repos are the ones that publish to nuget.org; (2) `workflow-templates` is public and its reusable workflows reference these actions, so they would fail for public callers; (3) even for private callers every internal action repo needs *Settings → Actions → Access → accessible from repositories in the organization* set, 16 times. Making `workflow-templates` internal as well would break every public plugin repo. Internal remains an option only if the public-plugin lanes move out of scope. Mitigations for the public exposure: no secrets or internal data in any action (secrets are passed as `with:` inputs), CODEOWNERS plus rulesets limiting who can change them, and the immutable-release tags in section 4.
 - Secrets cannot be read inside a composite action, so workflows keep passing them as explicit `with:` inputs (already the design).
 - Action code must contain no PepperDash-internal data, since the repos are public.
 
-### 5.2 Recommended tiers (override as desired)
+### 5.2 Extraction order (tiers are sequence, not a cut-off)
 
-Inventory is the 18 actions in PR #57 minus `generate-config-schema` (dropped) and `docker-build-3series` (3-Series is out of scope) = 16.
+Inventory is the 18 actions in PR #57 minus `generate-config-schema` (dropped) and `docker-build-3series` (3-Series is out of scope) = **16 repos**. The four discovery actions are no longer merged (D2 overrides the earlier recommendation).
 
-| Tier | Repo (`action-<name>`) | Why this tier |
+| Order | Repos (`action-<name>`) | Why this order |
 |---|---|---|
-| **1: split first** (own change cadence or security weight) | `publish-nuget-org` (owns the public-publish gate: strictest CODEOWNERS, 2 approvals), `publish-nuget-github`, `apply-essentials-version-prefix` (changes with every Essentials major), `upload-release`, `cleanup-failed-release`, `embed-devtools-spa` (tracks devtools releases) | Independent value, small, or changes for reasons unrelated to the build |
-| **2: split once the interfaces settle** | `dotnet-build`, `copy-build-output`, `create-nuspec`, `pack-nuget`, `add-files-to-nupkg`, `check-package-name` | They change together with the build lanes; splitting now creates cross-repo coordination for little gain |
-| **3: merge, then split as one repo** | `get-sln-info`, `get-project-info`, `get-plugin-metadata`, `update-assembly-info` → one `action-project-info` (or keep inside workflow-templates) | Tiny discovery steps with no independent release story. Four repos for ~30 lines each is overhead |
-
-If the preference is a strict one-per-repo rule, apply the tier ordering as the *sequence* rather than a cut-off, and use the repo template (5.4) so the per-repo cost stays low.
+| **1** (own change cadence or security weight) | `publish-nuget-org` (owns the public-publish gate: strictest CODEOWNERS, 2 approvals), `publish-nuget-github`, `apply-essentials-version-prefix`, `upload-release`, `cleanup-failed-release`, `embed-devtools-spa` | Small, independent, or change for reasons unrelated to the build. First extraction also proves the template and release flow |
+| **2** (interfaces settle with the lanes) | `dotnet-build`, `copy-build-output`, `create-nuspec`, `pack-nuget`, `add-files-to-nupkg`, `check-package-name` | Change together with the build lanes; extract after Phase 2 lands so the interfaces are stable |
+| **3** (tiny discovery steps) | `get-sln-info`, `get-project-info`, `get-plugin-metadata`, `update-assembly-info` | ~30 lines each; extract last using the same template. Four repos is the cost of D2 |
 
 ### 5.3 Blockers and how to clear them
 
@@ -121,18 +121,41 @@ If the preference is a strict one-per-repo rule, apply the tier ordering as the 
 - `.github/dependabot.yml` (github-actions), `CODEOWNERS`, conventional-commit lint, `LICENSE`.
 - A short `docs/runbook.md`: how to release, how to roll back, how to test.
 
+### 5.5 Approvals and the publish action (D11)
+
+Decided: PRs need 1 approval, as in every other repo. `publish-nuget-org` becomes an action but the call stays the same: consumers keep calling the same reusable workflow with `secrets: inherit`, and the workflow calls `action-publish-nuget-org@v1` with `nuget-api-key` as today. Facts from the current workflows: the publish has **no `environment:` approval gate**; its only guard is the fail-closed public check inside the step; `NUGET_API_KEY` is passed from secrets.
+
+Decisions (all recorded 2026-10-27):
+
+| # | Point | Decision |
+|---|---|---|
+| 11a | Reviewers | 1 approval on every action repo, including `action-publish-nuget-org`. Same as the rest of the org |
+| 11b | Reviewer coverage | All repos are org-owned and created repos remain managed by org admins, so no per-repo team or CODEOWNERS group is required. Org admins are the fallback approver, which removes the solo-maintainer deadlock |
+| 11c | Stale approvals | Dismiss stale approvals on all action repos |
+| 11d | Bypass | None on `action-publish-nuget-org`; admin bypass elsewhere only with the audit log reviewed |
+| 11e | Who moves `v1` | Only the release workflow, from a tag on `main` |
+| 11f | `environment:` gate | None. Environment-level values are org-level and held in the workflow files; repos trigger via callers and the workflow holds the actions. Adding `environment:` would change the call, so it is out of scope |
+| 11g | `NUGET_API_KEY` | Stays an org secret, managed at org level, unchanged. Not re-scoped by this plan |
+
+Consequence of 11a plus 11f: the single PR approval on `action-publish-nuget-org` and the `v1` tag rule (11e) are the only controls on the publish path, so keep the public-gate tests mandatory in that repo's required checks.
+
+Related, already decided: a failed publish does not fail the job; it emits `::error::` plus a summary line (D10/C5). Note the risk this carries with no environment gate: nobody is watching a green run that did not publish, so the summary text is the only signal.
+
 ---
 
 ## 6. essentials-build-tools as the README and schema target
 
 Goal: when a plugin's code changes and is pushed, its README badges and generated docs are already correct, without a person remembering a step.
 
-### 6.1 Layer 1: local build (implemented in the template)
+**Decision (D7):** the C# dotnet tools in essentials-build-tools (`pd-readme`, `pd-schemagen`) replace `update-readme.yml` and `metadata.py`. They are the developer's tool first (VS Code tasks and MSBuild/build parameters, run locally) and a cloud step second (bonus: the same tools run after a push).
+
+### 6.1 Layer 1: local build and VS Code tasks (build implemented in the template; tasks to add)
 
 `src/Directory.Build.targets` on `git-config-updates`:
 
 - **Badges** are rewritten before every local build and checked (build error on drift) when `CI=true` or `-p:ReadmeMode=Check`.
 - **Docs** (marker sections) are *not* part of the normal build locally; they run on demand (`dotnet msbuild -t:UpdateReadmeDocs` or `dotnet pd-readme docs`), but **are checked in CI**.
+- **VS Code tasks (to add to the template's `.vscode/tasks.json`)**: `Readme: update badges`, `Readme: update docs`, `Readme: check`, and `Schema: generate`, each wrapping the `dotnet pd-readme` / `dotnet pd-schemagen` command or the matching MSBuild target and parameter (`-p:ReadmeMode=Check|Update`). Documented in the template README so a dev never types the CLI.
 - Net effect today: a developer who changes a join map or `TypeNames` and does not run the docs command gets a **CI failure** on push. That is a friction trap.
 
 ### 6.2 Layer 2: commit-time (recommended addition)
@@ -144,11 +167,7 @@ Husky.Net is already in the template and only has a `commit-msg` hook. Add a `pr
 Two jobs, both optional per repo:
 
 1. **Gate** (default, zero workflow change): the plugin's own targets already run `--check` under `CI=true`. workflow-templates only needs to guarantee, on every runner (`windows-latest`; the self-hosted `dmz-windows-2019` group is only used by the out-of-scope 3-Series lanes): a .NET 8+ runtime, `dotnet tool restore` working, and nuget.org reachable. If a repo's `nuget.config` lists a private feed that needs auth (see branch `feature/authenticate-github-packages-feed`), verify tool restore still resolves nuget.org.
-2. **Auto-fix** (replaces `update-readme.yml`): a reusable workflow `readme-sync.yml` (or `action-readme-sync`) that
-   - restores the repo's pinned tool from `.config/dotnet-tools.json` (so output equals what developers see locally), falling back to a default pinned version for repos that have not adopted the manifest,
-   - runs `pd-readme badges` and `pd-readme docs`,
-   - opens or updates a **pull request** (branch `robot-docs/<base>`; `peter-evans/create-pull-request` pinned by SHA, or `gh pr create`) instead of force-pushing,
-   - runs on push to `main` only, with `permissions: contents: write, pull-requests: write`; the org setting "Allow GitHub Actions to create and approve pull requests" must be on.
+2. **Post-push sync in the cloud (bonus, replaces `update-readme.yml`)**: optional per repo. A reusable workflow (or action `action-readme-sync`) restores the repo's pinned tool from `.config/dotnet-tools.json` (so output equals what developers see locally; default pinned version for repos without the manifest), runs `pd-readme badges` and `pd-readme docs` on push to `main`, and opens or updates a **pull request** (`robot-docs/<base>`) instead of force-pushing. Needs `contents: write, pull-requests: write` and the org setting "Allow GitHub Actions to create and approve pull requests". Built only after Layers 1 to 2 are adopted; it is the safety net, not the primary path.
 
 ### 6.4 Format changes and rollout
 
@@ -164,11 +183,18 @@ Two jobs, both optional per repo:
 | B. Fail on `main`/release builds, warn elsewhere | Lets branches go green; catches drift before release |
 | C. Never fail; the auto-fix PR repairs it | Lowest friction; README can lag until the PR merges |
 
-Recommendation: **B plus the pre-commit hook**, with option C's auto-fix PR kept for repos that opt in.
+**Decided (D6): Option A.** The known cost is a developer who edits in the GitHub web UI (or resolves a README conflict by hand) and gets a red check they cannot fix without the tool. Mitigations that keep A workable:
+
+- The failure message names the exact fix (`dotnet pd-readme docs` or the VS Code task `Readme: update docs`) and the README section that drifted, never a bare diff.
+- Husky pre-commit hook (6.2) and VS Code tasks (6.1) make the local fix one step.
+- The tool version is pinned in `.config/dotnet-tools.json`, so format changes reach a plugin only via a deliberate bump PR, not as a surprise red build (6.4).
+- Revisit B if web-UI-edit failures turn out to be frequent after the canaries (Phase 4).
 
 ---
 
 ## 7. DocFX versus the current `pd-readme` (C# tool)
+
+**Decision (D8):** deferred to a day-2/day-3 plan. Nothing in sections 8 to 10 depends on it. The analysis below is kept for that plan.
 
 They solve different problems, so the recommendation is complementary use, not a swap.
 
@@ -216,14 +242,14 @@ Exit: policy merged as `docs/versioning-policy.md`; `action-template` repo exist
 2. PR A: `getversion.yml` + pinned third-party actions (C6) + legacy `::warning::` steps (C8).
 3. PR B: Tier 1 actions in place in workflow-templates (still `./`-style paths), with tests.
 4. PR C: Essentials and plugin build lanes (net472 and net8) composing the actions.
-5. PR D: `readme-sync.yml` replacing `update-readme.yml`; `metadata.py` removed after the first successful canary.
+5. PR D: VS Code tasks and docs in the template, optional post-push sync (6.3); `update-readme.yml` and `metadata.py` removed after the first successful canary.
 6. PR E: `docs/migrating-callers.md` with the old→new mapping and the agent conversion prompt (detect net472 vs net8 from `<TargetFramework>`; preserve `secrets: inherit`, `needs:`, `if:`).
 
 Exit: each PR green on `self-test.yml` (actionlint + Pester), reviewed by two people, merged to `main`. No consumer behaviour changed yet.
 
 ### Phase 3: extract action repos (M per tier)
 
-For each action in tier order: create from `action-template`, move the action and its tests, vendor `common.ps1`, release `v1.0.0`, then switch workflow-templates to `@v1` and delete the in-repo copy in the same PR. Keep one action per PR so a revert is one revert.
+For each of the 16 actions in the order of section 5.2: create from `action-template`, move the action and its tests, vendor `common.ps1`, release `v1.0.0`, then switch workflow-templates to `@v1` and delete the in-repo copy in the same PR. Keep one action per PR so a revert is one revert.
 
 Exit (per tier): lane dry-run (`tests/run-workflow-local.ps1 -All`) green using released tags; no `./.github/actions/<name>` references remain for that tier.
 
@@ -239,7 +265,7 @@ Migrate callers in one repo of each type, using the migration guide and the agen
 | A net8 plugin | The new net8 lane |
 | `Essentials` and `PepperDashCore` | Essentials (Core) lanes, `.dll` artifacts, no package-name check |
 
-Exit: every canary produces the expected release, nupkg (or none, for the private repo) and README state; one deliberate failing-compile run leaves **no** tag, release or package; a deliberately stale README is caught by the gate and repaired by `readme-sync`.
+Exit: every canary produces the expected release, nupkg (or none, for the private repo) and README state; one deliberate failing-compile run leaves **no** tag, release or package; a deliberately stale README is caught by the gate and repaired by the local VS Code task (and by the post-push sync where enabled).
 
 ### Phase 5: batch migration (L)
 
@@ -257,7 +283,7 @@ Exit: no references remain; `docs/` catalog matches what exists.
 
 ### Optional follow-ups (not blocking)
 
-DocFX spike (section 7); Roslyn-based `pd-readme`; `pd-schemagen --portal`; pre-commit hook rolled out to all plugins via the template.
+DocFX (day-2/3 plan, section 7); Roslyn-based `pd-readme` (only if a regex miss appears, D9); `pd-schemagen --portal`; pre-commit hook rolled out to all plugins via the template.
 
 ---
 
@@ -267,28 +293,28 @@ DocFX spike (section 7); Roslyn-based `pd-readme`; `pd-schemagen --portal`; pre-
 |---|---|---|---|
 | Wrong action release breaks many repos | Med | High | Canaries first; `v1` tag controlled; rollback runbook; staged batches |
 | Private nuget feed in a plugin's `nuget.config` breaks `dotnet tool restore` | Low–Med | Med | Source mapping for tool packages, or a `--add-source` fallback; test one such repo |
-| Per-action repo overhead grows | High | Med | Tiering, `action-template`, shared runbook, Dependabot |
+| Per-action repo overhead (16 repos) grows | High | Med | Extraction order, `action-template`, shared runbook, Dependabot, scripted `apply-repo-settings.ps1` |
 | First `pd-readme` run produces README diffs in every plugin | High | Low | Planned "adopt" PR with a note in the migration guide |
 | Public gate misfires on `workflow_call` context | Low | High (private code on nuget.org) | Canary pair; keep fail-closed default |
 
 ---
 
-## 10. Decisions needed
+## 10. Decisions (all answered 2026-10-27)
 
-| # | Decision | Recommendation |
-|---|---|---|
-| D1 | Final naming for reusable workflows (and whether callers also rename) | Adopt `{entrypoint}-{series}-{tfm}-{action}.yml` (singular `build`); document that #49's examples named *callers*; rename callers only as part of the migration PRs, since those files change anyway |
-| D2 | Action repo split: tiered, or all 16 at once | Tiered (section 5.2); merge the four discovery actions into one repo (16 actions → 13 repos) |
-| D3 | Repo naming prefix and visibility | `PepperDash/action-<name>`, all public |
-| D4 | Caller pin style | `@v1` for first-party; SHA for third-party; keep `@main` working only until migrated |
-| D5 | Remove `generate-config-schema` from #57 | Yes (recorded decision) |
-| D6 | Stale README behaviour | Option B (fail on `main`/release) plus a Husky pre-commit hook (section 6.5) |
-| D7 | Keep `update-readme.yml` after migration | Replace with `readme-sync.yml` (PR-based), retire `metadata.py` |
-| D8 | DocFX | Complementary: spike for Essentials core only; do not replace `pd-readme` |
-| D9 | Roslyn rewrite of `pd-readme` | Defer until a regex miss is found in real plugins; run golden-file tests first |
-| D10 | ~~Publish failures non-fatal?~~ | **Decided:** do not fail the job; emit `::error::` plus a job-summary message identifying the failed publish (C5) |
-| D11 | Approval rules for action repos (1 vs 2 reviewers; solo-maintainer problem) | 1 approval, 2 on `publish-nuget-org`; name a second reviewer per repo first |
-| D12 | Who owns each phase | Assign before Phase 1 |
+| # | Decision | Status | Outcome |
+|---|---|---|---|
+| D1 | Reusable workflow naming | ✅ Answered | **Decided:** `{entrypoint}-{series}-{tfm}-{action}.yml` (4-Series only). Callers renamed only inside the migration PRs |
+| D2 | Action repo split | ✅ Answered | **Decided:** one repo per action (16), each independently manageable. Tiers set extraction order only |
+| D3 | Repo naming and visibility | ✅ Answered | **Naming decided:** `PepperDash/action-{descriptor}`. **Decided: public** (`internal` not viable, section 5.1; `workflow-templates` is public) |
+| D4 | Caller pin style | ✅ Answered | **Decided:** `@v1` first-party, SHA third-party, `@main` supported until migrated |
+| D5 | Remove `generate-config-schema` from #57 | ✅ Answered | **Decided:** remove |
+| D6 | Stale README behaviour | ✅ Answered | **Decided: Option A** (always fail under `CI=true`), accepting the web-UI-edit friction. Mitigations in 6.5 |
+| D7 | `update-readme.yml` after migration | ✅ Answered | **Decided:** replace with essentials-build-tools (VS Code tasks and build parameters locally; cloud post-push as bonus). Retire and remove `metadata.py` |
+| D8 | DocFX | ✅ Answered | **Decided:** deferred to a day-2/3 plan |
+| D9 | Roslyn rewrite of `pd-readme` | ✅ Answered | **Decided:** keep in the plan as contingency; trigger is a regex miss found in a real plugin; golden-file tests first |
+| D10 | Publish failures non-fatal | ✅ Answered | **Decided:** job stays green; `::error::` plus job-summary message (C5) |
+| D11 | Approval rules for action repos and NuGet publish | ✅ Answered | **Decided** (section 5.5): 1 approval everywhere including the publish action; stale approvals dismissed; no bypass on the publish action; only the release workflow moves `v1`; no `environment:` gate; `NUGET_API_KEY` stays an org secret |
+| D12 | Work ownership | ✅ Answered | **Decided:** break the work into small items for several implementers. Draft written: `docs/workflow-actions-work-breakdown.md`; owner names still to assign |
 
 ---
 
