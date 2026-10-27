@@ -54,12 +54,12 @@ Branch: `refactor/workflow-modularization-49`. One PR per row.
 |---|---|---|---|---|
 | C1 | **Scope cut:** remove `generate-config-schema` (C2), its Pester tests and `schema-gen/`, and its lane steps; remove the 3-Series lanes (`essentials-3series-net35-build.yml`, `plugin-3series-net35-build.yml`), `docker-build-3series`, the Essentials-v1 prefix branch, and their Pester/dry-runner coverage | M | none | `self-test.yml` green; no reference to the removed items remains (grep) |
 | C2 | **PR A:** `getversion.yml`, third-party refs pinned by SHA (C6), `gha-find-replace` replaced by a `sed`/pwsh step | S | C1 | Green; no `@master`/`@main` third-party refs |
-| C3 | **PR B:** Tier-1 actions in place (`./`-style paths) with tests; `pwsh` invocation fixed once (C11) | M | C1 | Pester green; actions call scripts without nested `pwsh` |
+| C3 | **PR B:** Wave 1 actions in place (`./`-style paths) with tests; `pwsh` invocation fixed once (C11) | M | C1 | Pester green; actions call scripts without nested `pwsh` |
 | C4 | **PR C:** Essentials and plugin 4-Series net472 and net8 lanes composing the actions (4 lanes plus essentials) | M | C3 | `tests/run-workflow-local.ps1 -All` green |
 | C5 | **PR E:** `docs/migrating-callers.md`: old→new file mapping, the agent conversion prompt (detect net472 vs net8 from `<TargetFramework>`; keep `secrets: inherit`, `needs:`, `if:`) | S | C4 | Reviewed by someone who did not write the lanes |
 | C6 | Delete dead `essentialsplugins-builds.yml` (C12) after confirming no caller references it (`gh search code`) | S | none | Merged on its own |
 
-PR D (readme tooling) is stream E.
+Plan PR letters map to items: PR A = C2, PR B = C3, PR C = C4, PR E = C5. PR D (README tooling) is stream E (E1–E4). Legacy `::warning::` steps are F2.
 
 ### Stream D: Extract the 16 action repos
 

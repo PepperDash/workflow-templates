@@ -13,7 +13,7 @@ The direction in PR #57 is right: composite actions for in-job steps, reusable w
 1. **Re-scope.** Issue #49 is a one-paragraph naming proposal; PR #57 is ~4,900 lines and its description still says "plan only". Track the work as an epic and split the PR.
 2. **Drop `generate-config-schema` from the PR.** It contradicts a recorded decision (schema generation is `pd-schemagen` in essentials-build-tools, wired through the template's MSBuild targets, with no workflow-templates change).
 3. **Add a pinning and release policy before splitting repos.** About 115 repos call `@main`; the new workflows pin actions to a feature branch. Splitting actions into repos multiplies this problem unless versioned tags come first.
-4. **One repo per action** (16 repos, `action-{descriptor}`), each independently versioned and releasable. Tiers (section 5.2) set the *order* of extraction, not a cut-off.
+4. **One repo per action** (16 repos, `action-{descriptor}`), each independently versioned and releasable. Waves (section 5.2) set the *order* of extraction, not a cut-off.
 5. **Treat essentials-build-tools as the source of truth for README badges and docs**, reached locally through VS Code tasks and MSBuild parameters, at commit time, and (bonus) in the cloud after a push. This replaces `update-readme.yml` and retires `metadata.py` (section 6). DocFX is deferred to a day-2/3 plan (section 7).
 
 **Blocking fact found while reviewing:** neither `PepperDash.Essentials.BuildTools.Readme` nor `...SchemaGen` is on nuget.org yet (both return 404), and the template branch `git-config-updates` already pins `readme` 0.1.0. Until the packages are published, any build of that branch fails at `dotnet tool restore`. Publishing is therefore Phase 0.
@@ -83,7 +83,7 @@ What is already good and should be kept: composite-for-steps / reusable-for-jobs
 
 ### 5.1 Requirements and cost
 
-**Decision (D2):** one repo per action, each manageable (versioned, released, rolled back, owned) without affecting another action or the workflows. The layout is clean (`uses: PepperDash/action-publish-nuget-org@v1`, `action.yml` at repo root), but each repo carries a release workflow, ruleset, CODEOWNERS, Dependabot, tests and CI. At 16 repos that is a recurring load, so the per-repo template (5.4) and tier ordering (5.2) keep it cheap.
+**Decision (D2):** one repo per action, each manageable (versioned, released, rolled back, owned) without affecting another action or the workflows. The layout is clean (`uses: PepperDash/action-publish-nuget-org@v1`, `action.yml` at repo root), but each repo carries a release workflow, ruleset, CODEOWNERS, Dependabot, tests and CI. At 16 repos that is a recurring load, so the per-repo template (5.4) and the wave ordering (5.2) keep it cheap.
 
 **Naming (D2/D3):** `PepperDash/action-{descriptor}`, descriptor is kebab-case, verb first, matching the action's current folder name: `action-publish-nuget-org`, `action-dotnet-build`, `action-create-nuspec`. Reasons for the `action-` prefix over a suffix or `gh-action-`: sorts together in the org list, mirrors the `uses:` line, and leaves the `essentials-*` / `pd-*` namespaces for products.
 
@@ -93,15 +93,15 @@ Hard requirements:
 - Secrets cannot be read inside a composite action, so workflows keep passing them as explicit `with:` inputs (already the design).
 - Action code must contain no PepperDash-internal data, since the repos are public.
 
-### 5.2 Extraction order (tiers are sequence, not a cut-off)
+### 5.2 Extraction order (waves are sequence, not a cut-off)
 
 Inventory is the 18 actions in PR #57 minus `generate-config-schema` (dropped) and `docker-build-3series` (3-Series is out of scope) = **16 repos**. The four discovery actions are no longer merged (D2 overrides the earlier recommendation).
 
-| Order | Repos (`action-<name>`) | Why this order |
+| Wave | Repos (`action-<name>`) | Why this order |
 |---|---|---|
-| **1** (own change cadence or security weight) | `publish-nuget-org` (owns the public-publish gate: strictest CODEOWNERS, 2 approvals), `publish-nuget-github`, `apply-essentials-version-prefix`, `upload-release`, `cleanup-failed-release`, `embed-devtools-spa` | Small, independent, or change for reasons unrelated to the build. First extraction also proves the template and release flow |
-| **2** (interfaces settle with the lanes) | `dotnet-build`, `copy-build-output`, `create-nuspec`, `pack-nuget`, `add-files-to-nupkg`, `check-package-name` | Change together with the build lanes; extract after Phase 2 lands so the interfaces are stable |
-| **3** (tiny discovery steps) | `get-sln-info`, `get-project-info`, `get-plugin-metadata`, `update-assembly-info` | ~30 lines each; extract last using the same template. Four repos is the cost of D2 |
+| **Wave 1** (own change cadence or security weight) | `publish-nuget-org` (owns the public-publish gate: strictest CODEOWNERS, 2 approvals), `publish-nuget-github`, `apply-essentials-version-prefix`, `upload-release`, `cleanup-failed-release`, `embed-devtools-spa` | Small, independent, or change for reasons unrelated to the build. First extraction also proves the template and release flow |
+| **Wave 2** (interfaces settle with the lanes) | `dotnet-build`, `copy-build-output`, `create-nuspec`, `pack-nuget`, `add-files-to-nupkg`, `check-package-name` | Change together with the build lanes; extract after Phase 2 lands so the interfaces are stable |
+| **Wave 3** (tiny discovery steps) | `get-sln-info`, `get-project-info`, `get-plugin-metadata`, `update-assembly-info` | ~30 lines each; extract last using the same template. Four repos is the cost of D2 |
 
 ### 5.3 Blockers and how to clear them
 
@@ -239,19 +239,19 @@ Exit: policy merged as `docs/versioning-policy.md`; `action-template` repo exist
 ### Phase 2: split and land PR #57 in reviewable pieces (M)
 
 1. Remove `generate-config-schema` (C2).
-2. PR A: `getversion.yml` + pinned third-party actions (C6) + legacy `::warning::` steps (C8).
-3. PR B: Tier 1 actions in place in workflow-templates (still `./`-style paths), with tests.
-4. PR C: Essentials and plugin build lanes (net472 and net8) composing the actions.
-5. PR D: VS Code tasks and docs in the template, optional post-push sync (6.3); `update-readme.yml` and `metadata.py` removed after the first successful canary.
-6. PR E: `docs/migrating-callers.md` with the old→new mapping and the agent conversion prompt (detect net472 vs net8 from `<TargetFramework>`; preserve `secrets: inherit`, `needs:`, `if:`).
+2. PR A (breakdown C2): `getversion.yml` + pinned third-party actions (C6). The legacy `::warning::` steps (C8) are breakdown item F2, added after the migration guide exists.
+3. PR B (breakdown C3): Wave 1 actions in place in workflow-templates (still `./`-style paths), with tests.
+4. PR C (breakdown C4): Essentials and plugin build lanes (net472 and net8) composing the actions.
+5. PR D (breakdown stream E, E1–E4): VS Code tasks and docs in the template, optional post-push sync (6.3); `update-readme.yml` and `metadata.py` removed after the first successful canary.
+6. PR E (breakdown C5): `docs/migrating-callers.md` with the old→new mapping and the agent conversion prompt (detect net472 vs net8 from `<TargetFramework>`; preserve `secrets: inherit`, `needs:`, `if:`).
 
 Exit: each PR green on `self-test.yml` (actionlint + Pester), reviewed by two people, merged to `main`. No consumer behaviour changed yet.
 
-### Phase 3: extract action repos (M per tier)
+### Phase 3: extract action repos (M per wave)
 
 For each of the 16 actions in the order of section 5.2: create from `action-template`, move the action and its tests, vendor `common.ps1`, release `v1.0.0`, then switch workflow-templates to `@v1` and delete the in-repo copy in the same PR. Keep one action per PR so a revert is one revert.
 
-Exit (per tier): lane dry-run (`tests/run-workflow-local.ps1 -All`) green using released tags; no `./.github/actions/<name>` references remain for that tier.
+Exit (per wave): lane dry-run (`tests/run-workflow-local.ps1 -All`) green using released tags; no `./.github/actions/<name>` references remain for that wave.
 
 ### Phase 4: canary consumers (M)
 
@@ -304,7 +304,7 @@ DocFX (day-2/3 plan, section 7); Roslyn-based `pd-readme` (only if a regex miss 
 | # | Decision | Status | Outcome |
 |---|---|---|---|
 | D1 | Reusable workflow naming | ✅ Answered | **Decided:** `{entrypoint}-{series}-{tfm}-{action}.yml` (4-Series only). Callers renamed only inside the migration PRs |
-| D2 | Action repo split | ✅ Answered | **Decided:** one repo per action (16), each independently manageable. Tiers set extraction order only |
+| D2 | Action repo split | ✅ Answered | **Decided:** one repo per action (16), each independently manageable. Waves set extraction order only |
 | D3 | Repo naming and visibility | ✅ Answered | **Naming decided:** `PepperDash/action-{descriptor}`. **Decided: public** (`internal` not viable, section 5.1; `workflow-templates` is public) |
 | D4 | Caller pin style | ✅ Answered | **Decided:** `@v1` first-party, SHA third-party, `@main` supported until migrated |
 | D5 | Remove `generate-config-schema` from #57 | ✅ Answered | **Decided:** remove |
