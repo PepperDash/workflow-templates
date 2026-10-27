@@ -55,7 +55,7 @@ A and B run in parallel from day one.
 
 | ID | Job | Size | Needs first | Done when |
 |---|---|---|---|---|
-| C1 | Remove what is out of scope: the schema feature, all 3-Series material, and their tests | M | none | Automatic checks pass; nothing mentioning them remains |
+| C1 | Remove what is out of scope: the schema feature, all 3-Series material, and their tests | M | none | Automatic checks pass; nothing mentioning them remains, including in the testing guide |
 | C2 | Piece A: the version-finding step, locking outside steps to exact versions | S | C1 | Checks pass |
 | C3 | Piece B: the first group of actions, with tests, and a cleaner way of running scripts | M | C1 | Tests pass |
 | C4 | Piece C: the build recipes that use those actions | M | C3 | The local full-run test passes |
@@ -90,7 +90,7 @@ People in the same group can work at the same time. Every one of the 16 follows 
 | ID | Job | Size | Needs first | Done when |
 |---|---|---|---|---|
 | F1 | Make a failed publish visible: red message and summary line naming the package and the step, while the run stays green | M | C3 | A forced failure shows both |
-| F2 | Add a "please migrate" warning to every remaining old workflow, with no change in behaviour | S | C5 | Warning shows on an old run |
+| F2 | Add a "please migrate" warning to every remaining old workflow, with no change in behaviour, and a matching banner on three old guides | S | C5 | Warning shows on an old run; banner on the guides |
 | F3 | Lock the documentation-checker download to an exact version | S | none | No unlocked download remains |
 | F4 | Confirm the "public only" check behaves correctly on a real public repo and a real private repo | S | C4 | Opposite results recorded |
 
@@ -104,7 +104,8 @@ People in the same group can work at the same time. Every one of the 16 follows 
 | G4 | Update the starter templates for new repos so they begin on the new workflows | S | G2, G3 | A new repo starts on the new setup |
 | G5 | Write the migration script: list the callers, prepare one pull request per repo | M | G2, G3 | A dry run lists every repo without opening anything |
 | G6 | Move repos in batches of 10 to 15, watching each batch first | L | G5, group 3, F2 | Every repo ticked off in the tracking issue |
-| G7 | Delete the old workflows, scripts and docs | S | G6 plus two clean weeks | Nothing refers to them; docs match reality |
+| G8 | Rewrite the guides (overview, details, getting started, index) for the new workflows and update the testing guide | M | G3 | Guides describe only things that exist; a new reader can set up a repo from them |
+| G7 | Delete the old workflows, scripts and docs | S | G6, G8 plus two clean weeks | Nothing refers to them; docs match reality |
 
 ---
 

@@ -1,6 +1,6 @@
 # Workflow-templates → composite actions: review of #49 / PR #57 and migration plan
 
-Status: **draft v2** · Written 2026-10-27 · Decisions D1–D5 and D7–D12 recorded 2026-10-27; **all decisions D1–D12 recorded; next step is the D12 work breakdown**; D12 (work breakdown) follows once this plan is agreed · Supersedes `docs/workflow-modularization-plan.md` on `refactor/workflow-modularization-49` once agreed.
+Status: **draft v2** · Written 2026-10-27 · All decisions D1–D12 recorded 2026-10-27 (section 10); work breakdown in `docs/workflow-actions-work-breakdown.md` · Replaces the earlier `workflow-modularization-plan.md`, which was removed from `docs/` (see git history).
 
 Repos involved: `PepperDash/workflow-templates` (public), `PepperDash/essentials-build-tools` (internal; tools public on nuget.org), `PepperDash/EssentialsPluginTemplate`, `PepperDash/.github` (org starter workflows), ~115 consuming repos.
 

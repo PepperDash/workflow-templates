@@ -1,18 +1,19 @@
-# PepperDash Workflow Documentation
+# PepperDash Workflow Templates
 
-This directory contains documentation for the PepperDash GitHub workflow templates.
+Reusable GitHub workflows for building, versioning and publishing PepperDash projects, including Essentials, Core and Essentials Plugins.
 
-## Available Documentation
+## Documentation
 
-- [Index](docs/index.md): The main entry point for the documentation
-- [Workflows Overview](docs/workflows.md): Comprehensive overview of all available workflows
-- [Workflow Details](docs/workflow-details.md): Detailed information about each individual workflow
-- [Getting Started Guide](docs/getting-started.md): Step-by-step instructions for implementing workflows
+- [Index](docs/index.md): the main entry point
+- [Workflows Overview](docs/workflows.md): all available workflows
+- [Workflow Details](docs/workflow-details.md): details of each workflow
+- [Getting Started Guide](docs/getting-started.md): step-by-step instructions for implementing workflows
+- [Testing](docs/testing.md): run the action and workflow tests locally
 
-## Purpose
+## Migration in progress
 
-This documentation is designed to help users understand and implement the reusable GitHub workflows provided in this repository. The workflows automate building, versioning, and publishing for PepperDash projects including Essentials, Core, and Essentials Plugins.
+The workflows are being rebuilt from versioned composite actions. Existing callers keep working. See the [migration plan](docs/workflow-actions-migration-plan.md) and [work breakdown](docs/workflow-actions-work-breakdown.md), or the plain-language versions of the [plan](docs/workflow-actions-migration-plan-plain-language.md) and [work breakdown](docs/workflow-actions-work-breakdown-plain-language.md).
 
 ## Feedback
 
-If you have questions or suggestions about this documentation, please reach out to the CI/CD/Git Foundation Team via [Slack](https://pepperdash.slack.com/archives/C08KDBTD55G).
+If you have questions or suggestions, reach out to the CI/CD/Git Foundation Team via [Slack](https://pepperdash.slack.com/archives/C08KDBTD55G).

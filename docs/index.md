@@ -7,6 +7,10 @@ Welcome to the PepperDash GitHub Workflows documentation. This documentation pro
 1. [Workflows Overview](workflows.md) - A comprehensive overview of all available workflows
 2. [Workflow Details](workflow-details.md) - Detailed information about each workflow
 3. [Getting Started Guide](getting-started.md) - Step-by-step instructions for implementing workflows
+4. [Testing](testing.md) - Running the action and workflow tests locally
+5. [Migration plan](workflow-actions-migration-plan.md) and [work breakdown](workflow-actions-work-breakdown.md) - The in-progress move to versioned composite actions (plain-language versions: [plan](workflow-actions-migration-plan-plain-language.md), [work breakdown](workflow-actions-work-breakdown-plain-language.md))
+
+> **Migration in progress.** The workflows documented here keep working and are not being changed for consumers. They will be replaced by versioned workflows (`@v1`) and each repo will be migrated in batches. Until the migration guide is published, keep using the callers below.
 
 ## Quick Start
 

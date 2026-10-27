@@ -52,7 +52,7 @@ Branch: `refactor/workflow-modularization-49`. One PR per row.
 
 | ID | Item | Size | Depends on | Done when |
 |---|---|---|---|---|
-| C1 | **Scope cut:** remove `generate-config-schema` (C2), its Pester tests and `schema-gen/`, and its lane steps; remove the 3-Series lanes (`essentials-3series-net35-build.yml`, `plugin-3series-net35-build.yml`), `docker-build-3series`, the Essentials-v1 prefix branch, and their Pester/dry-runner coverage | M | none | `self-test.yml` green; no reference to the removed items remains (grep) |
+| C1 | **Scope cut:** remove `generate-config-schema` (C2), its Pester tests and `schema-gen/`, and its lane steps; remove the 3-Series lanes (`essentials-3series-net35-build.yml`, `plugin-3series-net35-build.yml`), `docker-build-3series`, the Essentials-v1 prefix branch, and their Pester/dry-runner coverage | M | none | `self-test.yml` green; no reference to the removed items remains (grep); `docs/testing.md` no longer documents the removed items |
 | C2 | **PR A:** `getversion.yml`, third-party refs pinned by SHA (C6), `gha-find-replace` replaced by a `sed`/pwsh step | S | C1 | Green; no `@master`/`@main` third-party refs |
 | C3 | **PR B:** Wave 1 actions in place (`./`-style paths) with tests; `pwsh` invocation fixed once (C11) | M | C1 | Pester green; actions call scripts without nested `pwsh` |
 | C4 | **PR C:** Essentials and plugin 4-Series net472 and net8 lanes composing the actions (4 lanes plus essentials) | M | C3 | `tests/run-workflow-local.ps1 -All` green |
@@ -91,7 +91,7 @@ Wave exit: lane dry-run green using released tags; no `./.github/actions/<name>`
 | ID | Item | Size | Depends on | Done when |
 |---|---|---|---|---|
 | F1 | `report-publish-status` step (C5/D10): non-fatal publish, final `if: always()` step emits `::error::<registry, package, failing step>` and appends the same text to `$GITHUB_STEP_SUMMARY`; job result unchanged | M | C3 | A forced publish failure leaves a green job with the error annotation and summary line (test in Pester and one real run) |
-| F2 | `::warning::` step in every remaining legacy 4-Series workflow naming its replacement and `migrating-callers.md` (C8); behaviour unchanged | S | C5 | Warning visible on a legacy run |
+| F2 | `::warning::` step in every remaining legacy 4-Series workflow naming its replacement and `migrating-callers.md` (C8); behaviour unchanged. Also add a "deprecated, see the migration guide" banner to `docs/workflows.md`, `workflow-details.md` and `getting-started.md` | S | C5 | Warning visible on a legacy run; banner on the three docs |
 | F3 | Pin `actionlint` download in `self-test.yml` by version and checksum (C6) | S | none | No `curl …/main/` remains |
 | F4 | Confirm `github.event.repository.visibility` behaviour inside `workflow_call` on a real public and private repo pair (C13) | S | C4 | Opposite outcomes recorded; fail-closed default confirmed |
 
@@ -105,7 +105,8 @@ Wave exit: lane dry-run green using released tags; no `./.github/actions/<name>`
 | G4 | Update `PepperDash/.github/workflow-templates/*-caller.yml` and `.properties.json` so new repos start on the new workflows (C9) | S | G2, G3 | New repo from a starter uses `@v1` workflows |
 | G5 | Migration script: `gh search code` to list callers, one PR per repo from the agent prompt, grouped by type | M | G2, G3 | Dry run lists all callers and generates PRs without opening them |
 | G6 | Batch migration, 10–15 repos per batch, each batch watched before the next | L | G5, Wave 3, F2 | Tracking checklist in the epic is complete |
-| G7 | Retirement: delete legacy workflows, `metadata.py`, `test-scripts/`, old docs; tag `v2.0.0` if old names were public surface | S | G6 plus two clean weeks (plan 8, Phase 5 exit) | `gh search code` returns no references; docs match what exists |
+| G8 | Docs refresh: rewrite `docs/workflows.md`, `workflow-details.md`, `getting-started.md` and `index.md` for the new workflows (`@v1`, new file names); update `docs/testing.md` for `actions.lock` | M | G3 | Docs describe only workflows that exist; a new reader can set up a caller from them |
+| G7 | Retirement: delete legacy workflows, `metadata.py`, `test-scripts/`, old docs; tag `v2.0.0` if old names were public surface | S | G6, G8 plus two clean weeks (plan 8, Phase 5 exit) | `gh search code` returns no references; docs match what exists |
 
 ---
 

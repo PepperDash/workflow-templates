@@ -165,7 +165,7 @@ To ensure the workflows function correctly, your project should adhere to the fo
 
 ```
 /Project-Repo/
-├── .gitub/
+├── .github/
 │   └── workflows/
 │       ├── essentialsplugins-builds-caller.yml  // <== Essentials Plugins (EPI) caller
 │       └── essentials-builds-caller.yml         // <== Essentials & Core caller
