@@ -1,6 +1,6 @@
 # Workflow Modularization Plan (issue #49)
 
-Status: **proposal — awaiting review**
+Status: **superseded by [workflow-actions-migration-plan.md](workflow-actions-migration-plan.md)** (kept for history)
 Branch: `refactor/workflow-modularization-49` (off `origin/main`)
 
 ## Goals
