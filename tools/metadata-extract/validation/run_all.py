@@ -13,8 +13,6 @@ Writes <work>/facts/<owner>__<repo>.json and <work>/runs.json (what happened per
 import glob
 import json
 import os
-import re
-import subprocess
 import sys
 
 EXPORT, WORK = sys.argv[1], sys.argv[2]
@@ -22,12 +20,9 @@ ONLY = set(sys.argv[sys.argv.index('--only') + 1].split(',')) if '--only' in sys
 OVERRIDES = json.load(open(sys.argv[sys.argv.index('--overrides') + 1])) if '--overrides' in sys.argv else {}
 PINNED = OVERRIDES.get('pinned', {})
 TAG_OVERRIDE = OVERRIDES.get('tagOverride', {})
-# Build the tool first: dotnet build tools/metadata-extract -c Release
-EXTRACTOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'bin', 'Release', 'net8.0', 'metadata-extract.dll')
 
-def run(cmd, cwd=None, timeout=900):
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
-    return p.returncode, p.stdout + p.stderr
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from build_and_extract import build_and_extract, run  # noqa: E402
 
 def newest_versions():
     """{owner/repo: (version, packageId)} using the last version file the export wrote per repo."""
@@ -48,23 +43,6 @@ def newest_versions():
             if pinned:
                 out[f'{owner}/{repo}'] = (pinned, docs[-1]['packageId'])
     return out
-
-def projects(repo_dir):
-    found = [p for p in glob.glob(os.path.join(repo_dir, '**', '*.csproj'), recursive=True)
-             if not re.search(r'[\\/](tests?|[^\\/]*\.Tests?)[\\/]|Tests?\.csproj$', p, re.I)]
-    four = [p for p in found if '4series' in os.path.basename(p).lower()
-            or re.search(r'<TargetFrameworks?>[^<]*net(6|8|9)', open(p, encoding='utf-8', errors='ignore').read())]
-    return four or found
-
-def output_dll(project):
-    text = open(project, encoding='utf-8', errors='ignore').read()
-    m = re.search(r'<AssemblyName>([^<$]+)</AssemblyName>', text)
-    name = m.group(1).strip() if m else os.path.splitext(os.path.basename(project))[0]
-    # OutputPath varies (src/4Series/bin/...), so look anywhere under the project's folder
-    hits = sorted((h for h in glob.glob(os.path.join(os.path.dirname(project), '**', 'bin', 'Release', '**', f'{name}.dll'), recursive=True)
-                   if os.sep + 'obj' + os.sep not in h),
-                  key=os.path.getmtime)
-    return hits[-1] if hits else None
 
 os.makedirs(os.path.join(WORK, 'repos'), exist_ok=True)
 os.makedirs(os.path.join(WORK, 'facts'), exist_ok=True)
@@ -91,29 +69,8 @@ for full, (version, package_id) in newest_versions().items():
             print(f'{full}@{version}: no tag')
             continue
 
-    dlls, build_errors = [], []
-    for project in projects(repo_dir):
-        code, out = run(['dotnet', 'build', project, '-c', 'Release', '-nologo', '-v', 'q'])
-        if code != 0:
-            build_errors.append({'project': os.path.relpath(project, repo_dir),
-                                 'errors': sorted({l.strip() for l in out.splitlines() if ': error ' in l})[:8]})
-            continue
-        dll = output_dll(project)
-        if dll:
-            dlls.append(dll)
-    record['projects'] = [os.path.relpath(p, repo_dir) for p in projects(repo_dir)]
-    record['assemblies'] = [os.path.relpath(d, repo_dir) for d in dlls]
-    if build_errors:
-        record['buildErrors'] = build_errors
-
-    facts_path = os.path.join(WORK, 'facts', f'{owner}__{repo}.json')
-    cmd = ['dotnet', EXTRACTOR, '--source', repo_dir, '--out', facts_path]
-    for dll in dlls:
-        cmd += ['--assembly', dll]
-    code, out = run(cmd)
-    record['status'] = 'ok' if code == 0 and dlls else ('source-only' if code == 0 else 'extract-failed')
-    if code != 0:
-        record['detail'] = out.strip().splitlines()[-5:]
-    print(f"{full}@{version}: {record['status']} ({len(dlls)} assemblies{', build errors' if build_errors else ''})")
+    built = build_and_extract(repo_dir, os.path.join(WORK, 'facts', f'{owner}__{repo}.json'))
+    record.update({k: v for k, v in built.items() if k != 'packageId'})
+    print(f"{full}@{version}: {record['status']} ({len(record['assemblies'])} assemblies{', build errors' if 'buildErrors' in record else ''})")
 
 json.dump(runs, open(os.path.join(WORK, 'runs.json'), 'w'), indent=2)

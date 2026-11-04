@@ -1,0 +1,9 @@
+{
+  "name": "release-metadata",
+  "private": true,
+  "description": "Assembles, checks and registers pepperdash-metadata.json for the pepperdash-metadata workflow",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "ajv": "8.17.1" }
+}

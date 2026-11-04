@@ -1,0 +1,667 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/PepperDash/workflow-templates/main/schemas/pepperdash-metadata.v1.schema.json",
+  "title": "PepperDash release metadata",
+  "description": "One release of Essentials, a plugin, a React UI or a touchpanel wrapper. CI writes it as pepperdash-metadata.json, uploads it to the GitHub release and sends it to UDM. See docs/pepperdash-metadata.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specVersion",
+    "kind",
+    "packageId",
+    "label",
+    "version",
+    "tag",
+    "prerelease",
+    "repoUrl",
+    "commitSha",
+    "publishedAt",
+    "generator",
+    "assets",
+    "typeNames"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "specVersion": {
+      "const": 1
+    },
+    "kind": {
+      "enum": ["essentials", "plugin", "userInterface", "touchpanelWrapper"]
+    },
+    "packageId": {
+      "description": "csproj <PackageId>; the repo name for userInterface and touchpanelWrapper",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "version": {
+      "description": "The tag without its leading v",
+      "$ref": "#/definitions/semver"
+    },
+    "tag": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "prerelease": {
+      "type": "boolean"
+    },
+    "repoUrl": {
+      "type": "string",
+      "pattern": "^https://github\\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+$",
+      "description": "https://github.com/<owner>/<repo>. Owner and repo become S3 key segments"
+    },
+    "commitSha": {
+      "description": "The commit the tag points at",
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,64}$"
+    },
+    "publishedAt": {
+      "description": "ISO 8601 UTC timestamp of the GitHub release",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script", "prompt", "agent", "reusedFrom"],
+      "properties": {
+        "script": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": ["string", "null"]
+        },
+        "agent": {
+          "type": ["string", "null"]
+        },
+        "reusedFrom": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/semver"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "minimumEssentialsVersion": {
+      "$ref": "#/definitions/semver"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/asset"
+      },
+      "maxItems": 50
+    },
+    "typeNames": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/typeNameMetadata"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": ["userInterface", "touchpanelWrapper"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "typeNames": {
+            "type": "object",
+            "maxProperties": 0
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "semver": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$",
+      "maxLength": 128
+    },
+    "jsonSchema": {
+      "$ref": "http://json-schema.org/draft-07/schema#"
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "size", "sha256"],
+      "properties": {
+        "name": {
+          "description": "Becomes an S3 key segment: no path separators",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$"
+        },
+        "type": {
+          "enum": ["cpz", "cplz", "ch5z", "zip"]
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 209715200
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex"
+        }
+      }
+    },
+    "typeNameMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "interfaces"],
+      "properties": {
+        "schema": {
+          "description": "JSON Schema for the device config. $defs.propertiesConfig.default seeds new devices",
+          "$ref": "#/definitions/jsonSchema"
+        },
+        "label": {
+          "type": "string"
+        },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "routingPorts": {
+          "$ref": "#/definitions/routingPorts"
+        },
+        "controlPorts": {
+          "$ref": "#/definitions/controlPorts"
+        },
+        "controlMethods": {
+          "$ref": "#/definitions/controlMethods"
+        },
+        "formMetadata": {
+          "$ref": "#/definitions/formMetadata"
+        },
+        "destinationListRoleSchema": {
+          "$ref": "#/definitions/jsonSchema"
+        },
+        "sourceListIconOptionsSchema": {
+          "$ref": "#/definitions/jsonSchema"
+        },
+        "audioControlPointsListMetaData": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "levelControls": {
+              "$ref": "#/definitions/itemKeyPath"
+            },
+            "presets": {
+              "$ref": "#/definitions/itemKeyPath"
+            }
+          }
+        },
+        "childDeviceMetadata": {
+          "$ref": "#/definitions/childDeviceMetadata"
+        },
+        "description": {
+          "description": "The factory's [Description] attribute text",
+          "type": "string"
+        },
+        "deviceKind": {
+          "enum": ["device", "room", "roomCombiner"]
+        },
+        "catalog": {
+          "$ref": "#/definitions/catalog"
+        }
+      }
+    },
+    "routingPorts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputs", "outputs"],
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/routingPort"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/routingPort"
+          }
+        }
+      }
+    },
+    "routingPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "label", "signalType", "portConnectionType"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "signalType": {
+          "enum": ["audio", "video", "audioVideo", "usb"]
+        },
+        "portConnectionType": {
+          "enum": [
+            "None",
+            "DisplayPort",
+            "Dvi",
+            "Hdmi",
+            "Rgb",
+            "Vga",
+            "LineAudio",
+            "DigitalAudio",
+            "Sdi"
+          ]
+        }
+      }
+    },
+    "controlPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "count"],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "controlPorts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "com": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "digitalInputs": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "relay": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "versiport": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "ir": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "cresnet": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "ipid": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "infinetEx": {
+          "$ref": "#/definitions/controlPort"
+        },
+        "cec": {
+          "$ref": "#/definitions/controlPort"
+        }
+      }
+    },
+    "controlMethod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "defaults": {
+          "description": "Initial values for the method's settings, such as port, baudRate or ipid",
+          "type": "object"
+        }
+      }
+    },
+    "controlMethods": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "com": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "tcpip": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "ssh": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "telnet": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "secureTcpIp": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "http": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "https": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "ws": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "wss": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "infinetEx": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "ipid": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "ipidtcp": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "ir": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "cresnet": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "cec": {
+          "$ref": "#/definitions/controlMethod"
+        },
+        "udp": {
+          "$ref": "#/definitions/controlMethod"
+        }
+      }
+    },
+    "formMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["propertyMetadata"],
+      "properties": {
+        "hasSourceList": {
+          "type": "boolean"
+        },
+        "hasDestinationList": {
+          "type": "boolean"
+        },
+        "hasAudioControlPointList": {
+          "type": "boolean"
+        },
+        "hasCamerasList": {
+          "type": "boolean"
+        },
+        "propertyMetadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["properties"],
+          "properties": {
+            "properties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/formPropertyMetadata"
+              }
+            }
+          }
+        }
+      }
+    },
+    "formPropertyMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaId", "formElement", "items"],
+      "properties": {
+        "schemaId": {
+          "description": "Must resolve to a property in this release's schema, for example #root/properties/externalSourceInputPort",
+          "type": "string",
+          "pattern": "^#"
+        },
+        "formElement": {
+          "enum": [
+            "SelectInputText",
+            "MultiSelectInputText",
+            "MultiSelectInputTextCommaDelimited"
+          ]
+        },
+        "doNotDraw": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dataset"],
+          "properties": {
+            "dataset": {
+              "enum": [
+                "devices",
+                "rooms",
+                "routingInputs",
+                "routingOutputs",
+                "tielines",
+                "sourceListItems",
+                "destinationListItems",
+                "audioControlPointListLevelItems",
+                "audioControlPointListPresetItems",
+                "camerasListItems",
+                "roomCombinerPartitions",
+                "roomCombinerRooms",
+                "roomCombinerScenarios",
+                "specifiedOptions"
+              ]
+            },
+            "interfaces": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "specifiedOptions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "label"],
+                "properties": {
+                  "id": {
+                    "type": ["string", "number"]
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "itemKeyPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemKeyPath"],
+      "properties": {
+        "itemKeyPath": {
+          "type": "string"
+        }
+      }
+    },
+    "childDeviceMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["separatorCharacter", "childrenProperties"],
+      "properties": {
+        "separatorCharacter": {
+          "type": "string"
+        },
+        "childrenProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "propertyName",
+              "childDesignator",
+              "keyProperty",
+              "nameProperty",
+              "interfaces",
+              "formatString"
+            ],
+            "properties": {
+              "propertyName": {
+                "type": "string"
+              },
+              "childDesignator": {
+                "type": "string"
+              },
+              "keyProperty": {
+                "description": "Property on each child used as the device key; $key uses the dictionary entry key",
+                "type": "string"
+              },
+              "nameProperty": {
+                "description": "Property on each child used as the display name; $key uses the dictionary entry key",
+                "type": "string"
+              },
+              "interfaces": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "formatString": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "catalogRef": {
+      "description": "An existing UDM entry. The name travels with the id because ids differ between Portal environments",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "catalogProposal": {
+      "description": "A name with no existing entry; UDM queues it for an admin",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposed"],
+      "properties": {
+        "proposed": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "catalogEntry": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/catalogRef"
+        },
+        {
+          "$ref": "#/definitions/catalogProposal"
+        }
+      ]
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "models", "match", "referenceData"],
+      "properties": {
+        "category": {
+          "$ref": "#/definitions/catalogEntry"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "name", "manufacturer"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "manufacturer": {
+                    "$ref": "#/definitions/catalogEntry"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["proposed", "manufacturer"],
+                "properties": {
+                  "proposed": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "manufacturer": {
+                    "$ref": "#/definitions/catalogEntry"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "confidence", "evidence"],
+          "properties": {
+            "source": {
+              "enum": ["sidecar", "baseline", "script", "agent"]
+            },
+            "confidence": {
+              "enum": ["high", "medium", "low"]
+            },
+            "evidence": {
+              "type": "string"
+            }
+          }
+        },
+        "referenceData": {
+          "description": "The etag of the UDM reference data snapshot it was matched against",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

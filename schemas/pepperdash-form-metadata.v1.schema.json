@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/PepperDash/workflow-templates/main/schemas/pepperdash-form-metadata.v1.schema.json",
+  "title": "PepperDash form metadata sidecar",
+  "description": ".pepperdash/form-metadata.json in a plugin repo: how the Portal config tool draws each typeName's config properties. CI merges it into pepperdash-metadata.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["typeNames"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "typeNames": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "pepperdash-metadata.v1.schema.json#/definitions/formMetadata"
+      }
+    }
+  }
+}
