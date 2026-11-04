@@ -61,6 +61,15 @@ foreach (var factory in source.Factories)
             configSource = "constructor-parameter";
         }
     }
+    if (configType is null && source.ConfigFromDeviceConstructor(factory.DeviceClass) is { } deserialized)
+    {
+        configType = device.inspector?.FindType(deserialized);
+        if (configType is not null)
+        {
+            configClass = deserialized;
+            configSource = "device-constructor";
+        }
+    }
 
     foreach (var typeName in factory.TypeNames)
     {

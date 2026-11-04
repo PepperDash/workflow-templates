@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 
 namespace PepperDash.MetadataExtract;
 
@@ -24,7 +23,7 @@ public sealed class TypeNameFacts
     /// <summary>factory (its generic argument) or build-device-branch (the class BuildDevice builds for this typeName)</summary>
     public required string DeviceClassSource { get; init; }
     public string? ConfigClass { get; set; }
-    /// <summary>How the config class was found: deserialize-call, helper-call or constructor-parameter</summary>
+    /// <summary>How the config class was found: deserialize-call, helper-call, constructor-parameter or device-constructor</summary>
     public string? ConfigClassSource { get; set; }
     public string? Description { get; set; }
     /// <summary>Null when no assembly was given</summary>
@@ -42,10 +41,9 @@ public sealed class RoutingPortFacts
     public List<string> Unresolved { get; } = new();
 }
 
+/// <summary>Name is the key exactly as the code passes it: config tie lines reference it verbatim</summary>
 public sealed record RoutingPort(
     string Name,
     string Label,
     string SignalType,
-    string PortConnectionType,
-    /// <summary>The key exactly as the code passes it; Name is its camelCase form</summary>
-    [property: JsonPropertyName("key")] string Key);
+    string PortConnectionType);

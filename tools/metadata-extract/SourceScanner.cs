@@ -299,6 +299,18 @@ public sealed class SourceScanner
         return (null, null);
     }
 
+    /// <summary>
+    /// A device whose constructor takes the raw DeviceConfig and deserializes its properties itself:
+    /// a plugin class in ToObject&lt;T&gt;()/DeserializeObject&lt;T&gt;() in one of its constructors.
+    /// </summary>
+    public string? ConfigFromDeviceConstructor(string deviceClass) =>
+        Declarations(deviceClass)
+            .SelectMany(c => c.Members.OfType<ConstructorDeclarationSyntax>())
+            .SelectMany(c => c.DescendantNodes().OfType<GenericNameSyntax>())
+            .Where(g => g.Identifier.ValueText is "ToObject" or "DeserializeObject")
+            .Select(g => RightmostName(g.TypeArgumentList.Arguments[0]))
+            .FirstOrDefault(t => Declarations(t).Count > 0);
+
     private static string? DeserializedType(SyntaxNode node) =>
         node.DescendantNodes().OfType<GenericNameSyntax>()
             .Where(g => g.Identifier.ValueText is "ToObject" or "DeserializeObject")
@@ -338,7 +350,7 @@ public sealed class SourceScanner
                     var port = ReadPort(creation);
                     if (port is null)
                         ports.Unresolved.Add(Location(creation));
-                    else if (list.All(p => p.Key != port.Key))
+                    else if (list.All(p => p.Name != port.Name))
                         list.Add(port);
                 }
             }
@@ -359,11 +371,10 @@ public sealed class SourceScanner
             return null;
 
         return new RoutingPort(
-            Naming.CamelCase(key),
+            key,
             key,
             Mappings.SignalType(signals),
-            Mappings.PortConnectionType(connections.FirstOrDefault()),
-            key);
+            Mappings.PortConnectionType(connections.FirstOrDefault()));
     }
 
     private string? ResolveString(ExpressionSyntax expression)

@@ -121,6 +121,8 @@ for full, run in sorted(runs.items()):
         # Routing ports
         ports = {}
         for side in ('inputs', 'outputs'):
+            # Essentials looks port keys up case-insensitively; a case-only difference is listed
+            # under differs, since the config tool matches tie-line ports exactly
             mp = {p['name'].lower(): p for p in ((m.get('routingPorts') or {}).get(side) or [])}
             rp = {p['name'].lower(): p for p in (r['routingPorts'].get(side) or [])}
             ports[side] = {
@@ -129,7 +131,7 @@ for full, run in sorted(runs.items()):
                 'codeOnly': sorted(rp[k]['name'] for k in set(rp) - set(mp)),
                 'differs': sorted(
                     f"{mp[k]['name']}: {f} mock {mp[k][f]}, code {rp[k][f]}"
-                    for k in set(mp) & set(rp) for f in ('signalType', 'portConnectionType')
+                    for k in set(mp) & set(rp) for f in ('name', 'signalType', 'portConnectionType')
                     if mp[k][f] != rp[k][f]),
             }
         ports['unresolved'] = len(r['routingPorts'].get('unresolved') or [])
