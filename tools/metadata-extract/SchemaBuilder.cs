@@ -193,6 +193,8 @@ public sealed class SchemaBuilder
             }
 
             var value = DefaultFor(type, property, propertyType, ordered);
+            // The nested schema's own default was copied above; it stands only if DefaultFor kept it
+            ordered.Remove("default");
             if (value is not null)
             {
                 ordered["default"] = value.DeepClone();

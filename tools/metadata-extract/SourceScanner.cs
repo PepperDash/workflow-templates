@@ -171,35 +171,45 @@ public sealed class SourceScanner
             .Where(m => m.Identifier.ValueText == "BuildDevice")
             .ToList();
         foreach (var call in methods.ToList().SelectMany(m => m.DescendantNodes().OfType<InvocationExpressionSyntax>()))
-        {
-            var (owner, method) = call.Expression switch
-            {
-                MemberAccessExpressionSyntax access => (RightmostName(access.Expression), access.Name.Identifier.ValueText),
-                IdentifierNameSyntax id => (factory.Identifier.ValueText, id.Identifier.ValueText),
-                _ => (null, null),
-            };
-            if (owner is null)
-                continue;
-            methods.AddRange(Declarations(owner)
-                .SelectMany(c => c.Members.OfType<MethodDeclarationSyntax>())
-                .Where(m => m.Identifier.ValueText == method && !methods.Contains(m)));
-        }
+            methods.AddRange(Called(call).Where(m => !methods.Contains(m)));
         return methods;
+    }
+
+    /// <summary>The plugin methods a call can reach: Owner.Method(), this.Method() or Method()</summary>
+    private IEnumerable<MethodDeclarationSyntax> Called(InvocationExpressionSyntax call)
+    {
+        var enclosing = call.Ancestors().OfType<ClassDeclarationSyntax>().FirstOrDefault()?.Identifier.ValueText;
+        var (owner, method) = call.Expression switch
+        {
+            MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } access => (enclosing, access.Name.Identifier.ValueText),
+            MemberAccessExpressionSyntax access => (RightmostName(access.Expression), access.Name.Identifier.ValueText),
+            IdentifierNameSyntax id => (enclosing, id.Identifier.ValueText),
+            _ => (null, null),
+        };
+        return owner is null
+            ? []
+            : Declarations(owner)
+                .SelectMany(c => c.Members.OfType<MethodDeclarationSyntax>())
+                .Where(m => m.Identifier.ValueText == method);
     }
 
     /// <summary>
     /// A factory registered for several models often builds a different class per typeName:
     /// <c>if (typeName.StartsWith("dmtx201c")) return new DmTx201CController(...)</c>, or a switch on
-    /// it. For each typeName, the innermost branch whose string literals match it and that creates a
-    /// plugin class deriving from the factory's device class, and the config a matching branch
-    /// deserializes. A branch's own statements don't include those of branches nested inside it,
-    /// and a negated condition (<c>!=</c>, <c>!</c>, <c>is not</c>) is no branch, since it can't
-    /// establish which typeName it runs for.
+    /// it. For each typeName, the innermost branch whose string literals match it and that creates
+    /// the factory's device class or a plugin class deriving from it, and the config a matching branch
+    /// deserializes. A branch's own statements don't include those of branches nested inside it, and
+    /// a simple negated condition (<c>typeName != "x"</c>, <c>!typeName.StartsWith("x")</c>,
+    /// <c>typeName is not "x"</c>) is a branch for every typeName it doesn't name. Any other negated
+    /// condition can't establish which typeName it runs for: it is no branch, and its body belongs to
+    /// none.
     /// </summary>
     private (Dictionary<string, string> classes, Dictionary<string, string> configs) Branches(
         ClassDeclarationSyntax factory, string deviceClass, List<string> typeNames)
     {
-        var branches = new List<(List<string> literals, bool prefix, bool contains, SyntaxNode body, string? returns)>();
+        var branches = new List<(List<string> literals, bool prefix, bool contains, bool inverted, SyntaxNode body, string? returns)>();
+        // Bodies of conditions that aren't branches still aren't the enclosing branch's own statements
+        var negated = new HashSet<SyntaxNode>();
         var methods = BuildDeviceMethods(factory);
         foreach (var method in methods)
         {
@@ -208,18 +218,34 @@ public sealed class SourceScanner
             {
                 switch (node)
                 {
-                    case IfStatementSyntax ifs when !IsNegated(ifs.Condition):
-                        var condition = ifs.Condition.ToString();
-                        branches.Add((StringLiterals(ifs.Condition).ToList(),
+                    case IfStatementSyntax ifs:
+                        // typeName != "x", !typeName.StartsWith("x"), typeName is not "x": every other typeName
+                        var (match, inverted) = ifs.Condition switch
+                        {
+                            BinaryExpressionSyntax b when b.IsKind(SyntaxKind.NotEqualsExpression) => (b, true),
+                            PrefixUnaryExpressionSyntax u when u.IsKind(SyntaxKind.LogicalNotExpression) => (u.Operand, true),
+                            IsPatternExpressionSyntax { Pattern: UnaryPatternSyntax not } when not.IsKind(SyntaxKind.NotPattern) =>
+                                ((SyntaxNode)not.Pattern, true),
+                            _ => ((SyntaxNode)ifs.Condition, false),
+                        };
+                        // Negated again inside (a != "x" && !b): which typeNames it runs for is unknown
+                        SyntaxNode[] inside = match is BinaryExpressionSyntax ne && inverted ? [ne.Left, ne.Right] : [match];
+                        if (inside.Any(IsNegated))
+                        {
+                            negated.Add(ifs.Statement);
+                            break;
+                        }
+                        var condition = match.ToString();
+                        branches.Add((StringLiterals(match).ToList(),
                             condition.Contains(".StartsWith(", StringComparison.Ordinal),
                             condition.Contains(".Contains(", StringComparison.Ordinal),
-                            ifs.Statement, returns));
+                            inverted, ifs.Statement, returns));
                         break;
                     case SwitchSectionSyntax section:
-                        branches.Add((section.Labels.SelectMany(StringLiterals).ToList(), false, false, section, returns));
+                        branches.Add((section.Labels.SelectMany(StringLiterals).ToList(), false, false, false, section, returns));
                         break;
                     case SwitchExpressionArmSyntax arm:
-                        branches.Add((StringLiterals(arm.Pattern).ToList(), false, false, arm.Expression, returns));
+                        branches.Add((StringLiterals(arm.Pattern).ToList(), false, false, false, arm.Expression, returns));
                         break;
                 }
             }
@@ -231,11 +257,11 @@ public sealed class SourceScanner
                          .Where(i => i.IsKind(SyntaxKind.ComplexElementInitializerExpression) && i.Expressions.Count == 2))
             {
                 if (element.Expressions[0] is LiteralExpressionSyntax key && key.IsKind(SyntaxKind.StringLiteralExpression))
-                    branches.Add(([key.Token.ValueText], false, false, element.Expressions[1], null));
+                    branches.Add(([key.Token.ValueText], false, false, false, element.Expressions[1], null));
             }
         }
 
-        var dispatchBodies = branches.Where(b => b.literals.Count > 0).Select(b => b.body).ToHashSet();
+        var dispatchBodies = branches.Where(b => b.literals.Count > 0).Select(b => b.body).Concat(negated).ToHashSet();
         IEnumerable<SyntaxNode> Own(SyntaxNode body) =>
             body.DescendantNodesAndSelf(n => n == body || !dispatchBodies.Contains(n))
                 .Where(n => n == body || !dispatchBodies.Contains(n));
@@ -246,7 +272,7 @@ public sealed class SourceScanner
         {
             var lower = typeName.ToLowerInvariant();
             var matching = branches
-                .Where(b => b.literals.Any(l =>
+                .Where(b => b.literals.Count > 0 && b.inverted != b.literals.Any(l =>
                 {
                     var literal = l.ToLowerInvariant();
                     return lower == literal || (b.prefix && lower.StartsWith(literal, StringComparison.Ordinal))
@@ -258,10 +284,11 @@ public sealed class SourceScanner
             var built = matching
                 .Select(b => Own(b.body).OfType<ObjectCreationExpressionSyntax>()
                     .Select(c => RightmostName(c.Type))
-                    .FirstOrDefault(c => c != deviceClass &&
-                        (DerivesFrom(c, deviceClass) || (b.returns is not null && DerivesFrom(c, b.returns)))))
+                    .FirstOrDefault(c => c == deviceClass ||
+                        DerivesFrom(c, deviceClass) || (b.returns is not null && DerivesFrom(c, b.returns))))
                 .FirstOrDefault(c => c is not null);
-            if (built is not null)
+            // The innermost branch decides, even when it builds the factory's own class
+            if (built is not null && built != deviceClass)
                 classes[typeName] = built;
             var config = matching.Select(b => ConfigIn(Own(b.body).ToList())).FirstOrDefault(c => c is not null);
             if (config is not null)
@@ -270,7 +297,7 @@ public sealed class SourceScanner
         return (classes, configs);
     }
 
-    private static bool IsNegated(ExpressionSyntax condition) =>
+    private static bool IsNegated(SyntaxNode condition) =>
         condition.DescendantNodesAndSelf().Any(n =>
             n.IsKind(SyntaxKind.LogicalNotExpression) || n.IsKind(SyntaxKind.NotEqualsExpression) ||
             n.IsKind(SyntaxKind.NotPattern));
@@ -326,11 +353,7 @@ public sealed class SourceScanner
     {
         foreach (var call in nodes.OfType<InvocationExpressionSyntax>())
         {
-            if (call.Expression is not MemberAccessExpressionSyntax access)
-                continue;
-            var helper = Declarations(RightmostName(access.Expression))
-                .SelectMany(c => c.Members.OfType<MethodDeclarationSyntax>())
-                .Where(m => m.Identifier.ValueText == access.Name.Identifier.ValueText)
+            var helper = Called(call)
                 .Select(m => DeserializedType(m.DescendantNodes()))
                 .FirstOrDefault(t => t is not null);
             if (helper is not null)
@@ -506,33 +529,50 @@ public sealed class SourceScanner
         }
 
         // Prop = literal; in a parameterless constructor, which runs after the initializers: the last
-        // write wins. Any other write (Count += 2, Prop = Load()) leaves the default unknown
+        // write wins. Any other write to this instance's members (Count += 2, Prop = Load(),
+        // Items.Add(x), or any write inside an if, loop or try) leaves the default unknown
         foreach (var ctor in cls.Members.OfType<ConstructorDeclarationSyntax>()
                      .Where(c => c.ParameterList.Parameters.Count == 0 && c.Body is not null))
         {
-            foreach (var statement in ctor.Body!.Statements.OfType<ExpressionStatementSyntax>())
+            foreach (var statement in ctor.Body!.Statements)
             {
-                var incremented = statement.Expression switch
+                if (statement is ExpressionStatementSyntax { Expression: AssignmentExpressionSyntax assignment } &&
+                    assignment.IsKind(SyntaxKind.SimpleAssignmentExpression) &&
+                    OwnMember(assignment.Left) is { } member && ToDefault(assignment.Right) is { } value)
                 {
-                    PostfixUnaryExpressionSyntax postfix => postfix.Operand,
-                    PrefixUnaryExpressionSyntax prefix => prefix.Operand,
-                    _ => null,
-                };
-                if (incremented is not null)
-                {
-                    Defaults[$"{className}.{RightmostName(incremented)}"] = DefaultValue.Unknown;
+                    Defaults[$"{className}.{member}"] = value;
                     continue;
                 }
-                if (statement.Expression is not AssignmentExpressionSyntax assignment)
-                    continue;
-                var key = $"{className}.{RightmostName(assignment.Left)}";
-                if (assignment.IsKind(SyntaxKind.SimpleAssignmentExpression) && ToDefault(assignment.Right) is { } value)
-                    Defaults[key] = value;
-                else
-                    Defaults[key] = DefaultValue.Unknown;
+                foreach (var written in WrittenMembers(statement))
+                    Defaults[$"{className}.{written}"] = DefaultValue.Unknown;
             }
         }
     }
+
+    /// <summary>Count or this.Count: a member of the instance being constructed, not Other.Count</summary>
+    private static string? OwnMember(ExpressionSyntax expression) => expression switch
+    {
+        IdentifierNameSyntax id => id.Identifier.ValueText,
+        MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } access => access.Name.Identifier.ValueText,
+        _ => null,
+    };
+
+    /// <summary>This instance's members a statement assigns, increments or mutates (Items.Add(x))</summary>
+    private static IEnumerable<string> WrittenMembers(SyntaxNode statement) =>
+        statement.DescendantNodesAndSelf().Select(node => node switch
+        {
+            AssignmentExpressionSyntax assignment => OwnMember(assignment.Left),
+            PostfixUnaryExpressionSyntax postfix when postfix.IsKind(SyntaxKind.PostIncrementExpression) ||
+                                                      postfix.IsKind(SyntaxKind.PostDecrementExpression) =>
+                OwnMember(postfix.Operand),
+            PrefixUnaryExpressionSyntax prefix when prefix.IsKind(SyntaxKind.PreIncrementExpression) ||
+                                                    prefix.IsKind(SyntaxKind.PreDecrementExpression) =>
+                OwnMember(prefix.Operand),
+            // A call whose result is discarded is there for what it does to its receiver
+            InvocationExpressionSyntax { Parent: ExpressionStatementSyntax, Expression: MemberAccessExpressionSyntax access } =>
+                OwnMember(access.Expression),
+            _ => null,
+        }).OfType<string>();
 
     private static DefaultValue? ToDefault(ExpressionSyntax expression)
     {

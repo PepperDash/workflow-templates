@@ -43,7 +43,8 @@ def newest_versions():
             docs = [json.load(open(f)) for f in glob.glob(os.path.join(EXPORT, owner, repo, '*.json'))]
             # The mocks list versions oldest first; the export doesn't keep order, so sort semver-ish
             def key(d):
-                core, _, pre = d['version'].partition('-')
+                # Build metadata (+build.5) doesn't affect precedence
+                core, _, pre = d['version'].split('+')[0].partition('-')
                 ids = [(0, int(x), '') if x.isdigit() else (1, 0, x) for x in pre.split('.')] if pre else []
                 return ([int(x) for x in core.split('.')], 0 if pre else 1, ids)
             docs.sort(key=key)

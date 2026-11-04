@@ -128,24 +128,38 @@ public sealed class AssemblyInspector : IDisposable
 
     private Dictionary<(string, string), string?>? _constants;
 
+    /// <summary>
+    /// The plugin and what it references, transitively (Plugin -> BaseLibrary -> Contracts). The
+    /// framework's own references aren't followed: they add nothing a plugin config names.
+    /// </summary>
     private IEnumerable<Assembly> WithReferences()
     {
-        yield return Assembly;
-        foreach (var reference in Assembly.GetReferencedAssemblies())
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Assembly.GetName().Name ?? "" };
+        var pending = new Queue<Assembly>([Assembly]);
+        while (pending.TryDequeue(out var assembly))
         {
-            Assembly? loaded;
-            try
-            {
-                loaded = _context.LoadFromAssemblyName(reference);
-            }
-            catch (FileNotFoundException)
-            {
-                // Not resolvable here; what it defines just isn't available
+            yield return assembly;
+            if (IsFramework(assembly.GetName().Name))
                 continue;
+            foreach (var reference in assembly.GetReferencedAssemblies())
+            {
+                if (reference.Name is null || !seen.Add(reference.Name))
+                    continue;
+                try
+                {
+                    pending.Enqueue(_context.LoadFromAssemblyName(reference));
+                }
+                catch (FileNotFoundException)
+                {
+                    // Not resolvable here; what it defines just isn't available
+                }
             }
-            yield return loaded;
         }
     }
+
+    private static bool IsFramework(string? name) =>
+        name is null or "mscorlib" or "netstandard" ||
+        name.StartsWith("System", StringComparison.Ordinal) || name.StartsWith("Microsoft", StringComparison.Ordinal);
 
     private static Type[] TypesOf(Assembly assembly)
     {
