@@ -35,7 +35,10 @@ source.Scan();
 
 var portsByClass = new Dictionary<string, RoutingPortFacts>(StringComparer.Ordinal);
 var schemas = new SchemaBuilder(source, facts.Warnings);
-var versions = source.Factories.Select(f => f.MinimumEssentialsVersion).OfType<string>().Distinct().ToList();
+// The package needs the highest any of its factories asks for
+var versions = source.Factories.Select(f => f.MinimumEssentialsVersion).OfType<string>().Distinct()
+    .OrderByDescending(v => Version.TryParse(v.Split('-', '+')[0], out var parsed) ? parsed : new Version())
+    .ToList();
 facts.MinimumEssentialsVersion = versions.FirstOrDefault();
 if (versions.Count > 1)
     facts.Warnings.Add($"factories set different minimum Essentials versions: {string.Join(", ", versions)}");
@@ -53,7 +56,15 @@ foreach (var factory in source.Factories)
     var configClass = factory.ConfigClass;
     var configSource = factory.ConfigClassSource;
     var configType = configClass is not null ? FindType(configClass, device.inspector) : null;
-    if (configType is null && device.type is not null)
+    if (configType is null && source.ConfigFromDeviceConstructor(factory.DeviceClass) is { } deserialized)
+    {
+        var deserializedType = FindType(deserialized, device.inspector);
+        if (deserializedType is not null || configClass is null)
+            (configClass, configSource, configType) = (deserialized, "device-constructor", deserializedType);
+    }
+    // Only a guess (a plugin class the constructor takes can be a service), so only when the source
+    // names no config
+    if (configClass is null && device.type is not null)
     {
         configType = device.inspector!.ConfigFromConstructor(device.type);
         if (configType is not null)
@@ -61,12 +72,6 @@ foreach (var factory in source.Factories)
             configClass = configType.Name;
             configSource = "constructor-parameter";
         }
-    }
-    if (configType is null && source.ConfigFromDeviceConstructor(factory.DeviceClass) is { } deserialized)
-    {
-        var deserializedType = FindType(deserialized, device.inspector);
-        if (deserializedType is not null || configClass is null)
-            (configClass, configSource, configType) = (deserialized, "device-constructor", deserializedType);
     }
 
     foreach (var typeName in factory.TypeNames)

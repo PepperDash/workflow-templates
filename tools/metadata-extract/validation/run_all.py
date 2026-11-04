@@ -26,7 +26,11 @@ TAG_OVERRIDE = OVERRIDES.get('tagOverride', {})
 EXTRACTOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'bin', 'Release', 'net8.0', 'metadata-extract.dll')
 
 def run(cmd, cwd=None, timeout=900):
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    try:
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # A failure like any other, so one slow repo doesn't end the batch
+        return 124, f'timed out after {timeout}s: {" ".join(cmd)}'
     return p.returncode, p.stdout + p.stderr
 
 def newest_versions():
@@ -82,7 +86,8 @@ for full, (version, package_id) in newest_versions().items():
         os.remove(facts_path)
     if full in TAG_OVERRIDE:
         record['comparedAgainstTag'] = TAG_OVERRIDE[full]
-    repo_dir = os.path.join(WORK, 'repos', f'{owner}__{repo}@{version}')
+    # Keyed by what's checked out, so changing a tagOverride clones the new tag
+    repo_dir = os.path.join(WORK, 'repos', f'{owner}__{repo}@{TAG_OVERRIDE.get(full, version)}')
     if not os.path.isdir(repo_dir):
         for tag in ([TAG_OVERRIDE[full]] if full in TAG_OVERRIDE else [f'v{version}', version]):
             code, out = run(['gh', 'repo', 'clone', full, repo_dir, '--', '-q', '--depth', '1', '--branch', tag])

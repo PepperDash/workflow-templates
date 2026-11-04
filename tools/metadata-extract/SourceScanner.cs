@@ -20,7 +20,11 @@ public sealed record FactoryInfo(
     Dictionary<string, string> BranchConfigClasses);
 
 /// <summary>A literal default from a property initializer or a parameterless constructor</summary>
-public sealed record DefaultValue(JsonNode? Value, string? EnumMember);
+public sealed record DefaultValue(JsonNode? Value, string? EnumMember)
+{
+    /// <summary>Written in a way the scanner can't evaluate (Count += 2): no default, not even an inherited one</summary>
+    public static readonly DefaultValue Unknown = new(null, null);
+}
 
 /// <summary>
 /// Reads the repo's C# source as syntax only: nothing is compiled or run. Finds what exists only
@@ -502,15 +506,30 @@ public sealed class SourceScanner
         }
 
         // Prop = literal; in a parameterless constructor, which runs after the initializers: the last
-        // assignment wins
+        // write wins. Any other write (Count += 2, Prop = Load()) leaves the default unknown
         foreach (var ctor in cls.Members.OfType<ConstructorDeclarationSyntax>()
                      .Where(c => c.ParameterList.Parameters.Count == 0 && c.Body is not null))
         {
             foreach (var statement in ctor.Body!.Statements.OfType<ExpressionStatementSyntax>())
             {
-                if (statement.Expression is AssignmentExpressionSyntax assignment &&
-                    ToDefault(assignment.Right) is { } value)
-                    Defaults[$"{className}.{RightmostName(assignment.Left)}"] = value;
+                var incremented = statement.Expression switch
+                {
+                    PostfixUnaryExpressionSyntax postfix => postfix.Operand,
+                    PrefixUnaryExpressionSyntax prefix => prefix.Operand,
+                    _ => null,
+                };
+                if (incremented is not null)
+                {
+                    Defaults[$"{className}.{RightmostName(incremented)}"] = DefaultValue.Unknown;
+                    continue;
+                }
+                if (statement.Expression is not AssignmentExpressionSyntax assignment)
+                    continue;
+                var key = $"{className}.{RightmostName(assignment.Left)}";
+                if (assignment.IsKind(SyntaxKind.SimpleAssignmentExpression) && ToDefault(assignment.Right) is { } value)
+                    Defaults[key] = value;
+                else
+                    Defaults[key] = DefaultValue.Unknown;
             }
         }
     }
