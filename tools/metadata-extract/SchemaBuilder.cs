@@ -149,7 +149,7 @@ public sealed class SchemaBuilder
         var required = new JsonArray();
         var defaults = new JsonObject();
 
-        foreach (var property in PublicProperties(type))
+        foreach (var (property, memberType) in SerializedMembers(type))
         {
             var attributes = Attributes(property);
             if (attributes.Any(a => a.AttributeType.FullName == JsonIgnore))
@@ -157,7 +157,7 @@ public sealed class SchemaBuilder
 
             var jsonProperty = attributes.FirstOrDefault(a => a.AttributeType.FullName == JsonProperty);
             var name = Safe(() => JsonName(jsonProperty)) ?? Naming.CamelCase(property.Name);
-            var propertyType = property.PropertyType;
+            var propertyType = memberType;
 
             if (ControlPropertyTypes.Contains(propertyType.Name))
             {
@@ -166,7 +166,17 @@ public sealed class SchemaBuilder
             }
 
             var propertyId = $"{id}/{name}";
-            var schema = TypeSchema(propertyType, propertyId, stack);
+            JsonObject schema;
+            try
+            {
+                schema = TypeSchema(propertyType, propertyId, stack);
+            }
+            catch (FileNotFoundException e)
+            {
+                // One unresolvable type (a Compact Framework Crestron type) costs this member, not the schema
+                _warnings.Add($"{type.Name}.{property.Name}: left out of the schema, missing reference: {e.Message}");
+                continue;
+            }
             var ordered = new JsonObject
             {
                 ["$id"] = propertyId,
@@ -224,28 +234,50 @@ public sealed class SchemaBuilder
         return schema["default"] is JsonObject nested && type.IsClass ? nested.DeepClone() : null;
     }
 
-    private IEnumerable<PropertyInfo> PublicProperties(Type type)
+    /// <summary>
+    /// What Newtonsoft reads by default: writable public properties, get-only collections it
+    /// populates in place, and public fields that aren't readonly (ScheduledEventConfig uses fields).
+    /// </summary>
+    private IEnumerable<(MemberInfo Member, Type Type)> SerializedMembers(Type type)
     {
-        PropertyInfo[] all;
+        PropertyInfo[] properties;
+        FieldInfo[] fields;
         try
         {
-            all = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
         }
         catch (FileNotFoundException e)
         {
             _warnings.Add($"{type.Name}: properties incomplete, missing reference: {e.Message}");
             return [];
         }
-        // Writable properties, plus get-only collections Newtonsoft populates in place
-        return all.Where(p => p.GetIndexParameters().Length == 0 &&
-            (p.SetMethod?.IsPublic == true || IsCollection(p.PropertyType)));
+        var members = new List<(MemberInfo, Type)>();
+        void Add(MemberInfo member, Func<Type> memberType, Func<Type, bool> serialized)
+        {
+            try
+            {
+                var resolved = memberType();
+                if (serialized(resolved))
+                    members.Add((member, resolved));
+            }
+            catch (FileNotFoundException e)
+            {
+                _warnings.Add($"{type.Name}.{member.Name}: left out of the schema, missing reference: {e.Message}");
+            }
+        }
+        foreach (var p in properties.Where(p => p.GetIndexParameters().Length == 0))
+            Add(p, () => p.PropertyType, t => p.SetMethod?.IsPublic == true || IsCollection(t));
+        foreach (var f in fields.Where(f => !f.IsInitOnly))
+            Add(f, () => f.FieldType, _ => true);
+        return members;
     }
 
     private static bool IsCollection(Type type) =>
         type.IsGenericType && type.GetGenericTypeDefinition().FullName is { } full &&
         (ArrayTypes.Contains(full) || DictionaryTypes.Contains(full));
 
-    private IList<CustomAttributeData> Attributes(PropertyInfo property)
+    private IList<CustomAttributeData> Attributes(MemberInfo property)
     {
         try
         {

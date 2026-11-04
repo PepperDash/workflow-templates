@@ -87,7 +87,8 @@ public sealed class AssemblyInspector : IDisposable
                 .OrderByDescending(c => c.GetParameters().Length)
                 .SelectMany(c => c.GetParameters())
                 .Select(p => p.ParameterType)
-                .FirstOrDefault(t => t.Assembly == Assembly && t.IsClass && !t.IsAbstract);
+                // DeviceConfig is the raw config; in Essentials itself it's in the assembly being read
+                .FirstOrDefault(t => t.Assembly == Assembly && t.IsClass && !t.IsAbstract && t.Name != "DeviceConfig");
         }
         catch (FileNotFoundException e)
         {

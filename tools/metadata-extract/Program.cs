@@ -89,20 +89,30 @@ foreach (var factory in source.Factories)
             built = device;
         }
 
+        // BuildDevice names the config for every typeName; otherwise it came from the factory's
+        // device class, and a more specific branch class may deserialize its own
+        var (typeConfigClass, typeConfigSource, typeConfigType) = (configClass, configSource, configType);
+        if (deviceClass != factory.DeviceClass && configSource is not ("deserialize-call" or "helper-call") &&
+            source.ConfigFromDeviceConstructor(deviceClass) is { } own &&
+            built.inspector?.FindType(own) is { } ownType)
+        {
+            (typeConfigClass, typeConfigSource, typeConfigType) = (own, "device-constructor", ownType);
+        }
+
         var entry = new TypeNameFacts
         {
             Factory = factory.Name,
             DeviceClass = deviceClass,
             DeviceClassSource = deviceClass == factory.DeviceClass ? "factory" : "build-device-branch",
-            ConfigClass = configClass,
-            ConfigClassSource = configSource,
+            ConfigClass = typeConfigClass,
+            ConfigClassSource = typeConfigSource,
             Description = factory.Description,
             Interfaces = built.type is null ? null : built.inspector!.Interfaces(built.type),
         };
         var ports = PortsOf(deviceClass);
         try
         {
-            entry.Schema = configType is null ? null : schemas.Build(configType, typeName);
+            entry.Schema = typeConfigType is null ? null : schemas.Build(typeConfigType, typeName);
         }
         catch (FileNotFoundException e)
         {

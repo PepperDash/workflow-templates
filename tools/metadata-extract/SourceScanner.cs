@@ -426,6 +426,20 @@ public sealed class SourceScanner
                 Defaults.TryAdd(key, value);
         }
 
+        foreach (var field in cls.Members.OfType<FieldDeclarationSyntax>()
+                     .Where(f => f.Modifiers.Any(SyntaxKind.PublicKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword)))
+        {
+            var fieldSummary = Summary(field);
+            foreach (var variable in field.Declaration.Variables)
+            {
+                var key = $"{className}.{variable.Identifier.ValueText}";
+                if (fieldSummary is not null)
+                    Summaries.TryAdd(key, fieldSummary);
+                if (variable.Initializer is not null && ToDefault(variable.Initializer.Value) is { } value)
+                    Defaults.TryAdd(key, value);
+            }
+        }
+
         // Prop = literal; in a parameterless constructor
         foreach (var ctor in cls.Members.OfType<ConstructorDeclarationSyntax>()
                      .Where(c => c.ParameterList.Parameters.Count == 0 && c.Body is not null))
