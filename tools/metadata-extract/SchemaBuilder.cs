@@ -266,8 +266,10 @@ public sealed class SchemaBuilder
                 _warnings.Add($"{type.Name}.{member.Name}: left out of the schema, missing reference: {e.Message}");
             }
         }
+        // Newtonsoft also sets a non-public setter when the property is marked [JsonProperty]
         foreach (var p in properties.Where(p => p.GetIndexParameters().Length == 0))
-            Add(p, () => p.PropertyType, t => p.SetMethod?.IsPublic == true || IsCollection(t));
+            Add(p, () => p.PropertyType, t => p.SetMethod?.IsPublic == true || IsCollection(t) ||
+                (p.SetMethod is not null && Attributes(p).Any(a => a.AttributeType.FullName == JsonProperty)));
         foreach (var f in fields.Where(f => !f.IsInitOnly))
             Add(f, () => f.FieldType, _ => true);
         return members;

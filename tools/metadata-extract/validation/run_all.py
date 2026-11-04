@@ -76,6 +76,10 @@ for full, (version, package_id) in newest_versions().items():
         continue
     owner, repo = full.split('/')
     record = runs[full] = {'version': version, 'packageId': package_id}
+    # An earlier run's facts must not stand in for this attempt if it fails
+    facts_path = os.path.join(WORK, 'facts', f'{owner}__{repo}.json')
+    if os.path.exists(facts_path):
+        os.remove(facts_path)
     if full in TAG_OVERRIDE:
         record['comparedAgainstTag'] = TAG_OVERRIDE[full]
     repo_dir = os.path.join(WORK, 'repos', f'{owner}__{repo}@{version}')
@@ -106,7 +110,6 @@ for full, (version, package_id) in newest_versions().items():
     if build_errors:
         record['buildErrors'] = build_errors
 
-    facts_path = os.path.join(WORK, 'facts', f'{owner}__{repo}.json')
     cmd = ['dotnet', EXTRACTOR, '--source', repo_dir, '--out', facts_path]
     for dll in dlls:
         cmd += ['--assembly', dll]
