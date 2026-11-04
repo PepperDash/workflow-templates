@@ -100,34 +100,73 @@ public sealed class AssemblyInspector : IDisposable
     /// Every public interface the plugin and the assemblies it references define, so a name in
     /// hand-written metadata can be told apart from one that exists nowhere in code.
     /// </summary>
-    public IEnumerable<string> DefinedInterfaces()
+    public IEnumerable<string> DefinedInterfaces() =>
+        WithReferences().SelectMany(TypesOf)
+            .Where(t => t.IsInterface && t.IsPublic)
+            .Select(t => t.IsGenericType ? t.Name[..t.Name.IndexOf('`')] : t.Name);
+
+    /// <summary>
+    /// The value of a const string field (RoutingPortNames.HdmiIn1) in the plugin or the assemblies
+    /// it references. A const's value is stored in metadata, so reading it runs nothing; static
+    /// readonly fields are set by code and can't be read.
+    /// </summary>
+    public string? StringConstant(string? owner, string field)
     {
-        var assemblies = new List<Assembly> { Assembly };
+        _constants ??= WithReferences().SelectMany(TypesOf)
+            .SelectMany(t => Safe(() => t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)) ?? [])
+            .Where(f => f.IsLiteral && Safe<string>(() => f.FieldType.FullName) == "System.String")
+            .GroupBy(f => (f.DeclaringType!.Name, f.Name))
+            .ToDictionary(g => g.Key, g => g.First().GetRawConstantValue() as string);
+
+        if (owner is not null)
+            return _constants.GetValueOrDefault((owner, field));
+        // Unqualified: only when exactly one type defines it
+        var matches = _constants.Where(c => c.Key.Item2 == field).Take(2).ToList();
+        return matches.Count == 1 ? matches[0].Value : null;
+    }
+
+    private Dictionary<(string, string), string?>? _constants;
+
+    private IEnumerable<Assembly> WithReferences()
+    {
+        yield return Assembly;
         foreach (var reference in Assembly.GetReferencedAssemblies())
         {
+            Assembly? loaded;
             try
             {
-                assemblies.Add(_context.LoadFromAssemblyName(reference));
+                loaded = _context.LoadFromAssemblyName(reference);
             }
             catch (FileNotFoundException)
             {
-                // Not resolvable here; its interfaces just aren't listed
+                // Not resolvable here; what it defines just isn't available
+                continue;
             }
+            yield return loaded;
         }
+    }
 
-        foreach (var assembly in assemblies)
+    private static Type[] TypesOf(Assembly assembly)
+    {
+        try
         {
-            Type[] types;
-            try
-            {
-                types = assembly.GetTypes();
-            }
-            catch (ReflectionTypeLoadException e)
-            {
-                types = e.Types.OfType<Type>().ToArray();
-            }
-            foreach (var type in types.Where(t => t.IsInterface && t.IsPublic))
-                yield return type.IsGenericType ? type.Name[..type.Name.IndexOf('`')] : type.Name;
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException e)
+        {
+            return e.Types.OfType<Type>().ToArray();
+        }
+    }
+
+    private static T? Safe<T>(Func<T?> read) where T : class
+    {
+        try
+        {
+            return read();
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
         }
     }
 

@@ -21,6 +21,8 @@ public sealed class TypeNameFacts
 {
     public required string Factory { get; init; }
     public required string DeviceClass { get; init; }
+    /// <summary>factory (its generic argument) or build-device-branch (the class BuildDevice builds for this typeName)</summary>
+    public required string DeviceClassSource { get; init; }
     public string? ConfigClass { get; set; }
     /// <summary>How the config class was found: deserialize-call, helper-call or constructor-parameter</summary>
     public string? ConfigClassSource { get; set; }

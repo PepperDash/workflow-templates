@@ -6,8 +6,8 @@ It works in two halves. Neither runs any code from the repo being read.
 
 | Half | Reads | Gives |
 |---|---|---|
-| Source ([Roslyn](https://github.com/dotnet/roslyn) syntax only) | the repo's `.cs` files, outside `bin`, `obj` and test folders | each factory's `TypeNames` and `MinimumEssentialsFrameworkVersion`; its device class; its config class (from `ToObject<T>()`/`DeserializeObject<T>()` in `BuildDevice`, directly or in a helper it calls); literal routing ports; property defaults; `/// <summary>` text; `[Description]` |
-| Assembly ([MetadataLoadContext](https://learn.microsoft.com/dotnet/standard/assembly/inspect-contents-using-metadataloadcontext)) | the built DLLs, resolving references from their output folders and the restore's `obj/project.assets.json` | every interface each device implements, including those inherited from Essentials base classes; the config class from the device constructor when the factory doesn't name it; the config schema from the real property types; every interface the assemblies define |
+| Source ([Roslyn](https://github.com/dotnet/roslyn) syntax only) | the repo's `.cs` files, outside `bin`, `obj` and test folders | each factory's `TypeNames` and `MinimumEssentialsFrameworkVersion`; its device class, and the more specific class `BuildDevice` builds for a typeName when it branches on it; its config class (from `ToObject<T>()`/`DeserializeObject<T>()` in `BuildDevice`, directly or in a helper it calls); routing ports with literal or constant keys; property defaults; `/// <summary>` text; `[Description]` |
+| Assembly ([MetadataLoadContext](https://learn.microsoft.com/dotnet/standard/assembly/inspect-contents-using-metadataloadcontext)) | the built DLLs, resolving references from their output folders and the restore's `obj/project.assets.json` | every interface each device implements, including those inherited from Essentials base classes; the config class from the device constructor when the factory doesn't name it; the config schema from the real property types; every interface the assemblies define; the values of `const` strings the source uses as port keys (`RoutingPortNames.HdmiIn1`) |
 
 Without `--assembly`, only the source half runs and `interfaces` and `schema` are `null`.
 
@@ -34,6 +34,7 @@ Build the plugin first (the release workflow already has). `--assets` defaults t
     "epsonProjector": {
       "factory": "DeviceFactory",
       "deviceClass": "EpsonProjector",
+      "deviceClassSource": "factory",            // factory | build-device-branch
       "configClass": "PropsConfig",
       "configClassSource": "helper-call",      // deserialize-call | helper-call | constructor-parameter
       "description": null,
@@ -55,11 +56,13 @@ Rules it applies, matching the spec and the config tool's existing schemas:
 
 - JSON property names are the `[JsonProperty]` name, otherwise the C# name in camelCase (`EnableBridgeComms` becomes `enableBridgeComms`).
 - Enums are string schemas listing the member names. `ControlPropertiesConfig` properties are left out of the form (the config tool edits them through `controlMethods`) and become `control: { method: "" }` in the default.
+- The device class is the factory's generic argument, unless `BuildDevice` (or a plugin method it calls) picks a class by typeName: an `if` on `==`, `Equals`, `StartsWith` or `Contains`, a `switch`, or a `{ "typeName", ... => new X(...) }` lookup table. The first matching branch wins, as at runtime, and `X` must derive from the factory's device class or the method's return type. Interfaces and ports are then read from `X`.
+- Port constructions are `new RoutingInputPort...`/`new RoutingOutputPort...`, including subclasses such as `RoutingInputPortWithVideoStatuses`, in the device class and the plugin classes it derives from.
 - Port `name` is the key in camelCase. `signalType` and `portConnectionType` follow the spec's mappings, and an unknown connection type becomes `None`.
 
 ## Known gaps
 
-- Routing ports whose keys come from loops, interpolation or other classes are listed as `unresolved` (or not found), for the agent.
+- Routing ports whose keys come from loops, interpolation, `static readonly` fields or enumeration classes (`DeviceInputEnum.Hdmi1.Name`) are listed as `unresolved`. Ports added by helper classes (NVX's `HdmiInput1Port.AddRoutingPort(this)`) aren't found at all. Both are left to the agent.
 - Defaults set in device code (`config.X > 0 ? config.X : Default`) or in Essentials' own config classes aren't found.
 - 3-series (Compact Framework) projects can't build on Linux or macOS, so they get the source half only.
 - Control system types (`cp4`, `rmc4`, ...) aren't registered by factories, so they don't appear.

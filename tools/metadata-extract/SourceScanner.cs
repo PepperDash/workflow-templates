@@ -13,7 +13,9 @@ public sealed record FactoryInfo(
     string? Description,
     string? ConfigClass,
     string? ConfigClassSource,
-    string? MinimumEssentialsVersion);
+    string? MinimumEssentialsVersion,
+    /// <summary>TypeNames whose BuildDevice branch builds a more specific class than DeviceClass</summary>
+    Dictionary<string, string> BranchDeviceClasses);
 
 /// <summary>A literal default from a property initializer or a parameterless constructor</summary>
 public sealed record DefaultValue(JsonNode? Value, string? EnumMember);
@@ -41,6 +43,8 @@ public sealed class SourceScanner
     public Dictionary<string, DefaultValue> Defaults { get; } = new(StringComparer.Ordinal);
     /// <summary>Doc comment summaries, keyed "ClassName" or "ClassName.PropertyName"</summary>
     public Dictionary<string, string> Summaries { get; } = new(StringComparer.Ordinal);
+    /// <summary>Resolves a const string defined outside the repo, by owning type (if written) and field name</summary>
+    public Func<string?, string, string?>? ExternalConstant { get; set; }
 
     public SourceScanner(string root)
     {
@@ -133,15 +137,130 @@ public sealed class SourceScanner
         var description = DescriptionAttribute(cls)
             ?? Declarations(deviceClass).Select(DescriptionAttribute).FirstOrDefault(d => d is not null);
         var (configClass, configSource) = FindConfigClass(cls);
+        typeNames = typeNames.Distinct(StringComparer.Ordinal).ToList();
 
         return new FactoryInfo(
             name,
             deviceClass,
-            typeNames.Distinct(StringComparer.Ordinal).ToList(),
+            typeNames,
             description,
             configClass,
             configSource,
-            minimumVersion);
+            minimumVersion,
+            BranchDeviceClasses(cls, deviceClass, typeNames));
+    }
+
+    /// <summary>BuildDevice and the plugin methods it calls, directly or as Owner.Method()</summary>
+    private List<MethodDeclarationSyntax> BuildDeviceMethods(ClassDeclarationSyntax factory)
+    {
+        var methods = factory.Members.OfType<MethodDeclarationSyntax>()
+            .Where(m => m.Identifier.ValueText == "BuildDevice")
+            .ToList();
+        foreach (var call in methods.ToList().SelectMany(m => m.DescendantNodes().OfType<InvocationExpressionSyntax>()))
+        {
+            var (owner, method) = call.Expression switch
+            {
+                MemberAccessExpressionSyntax access => (RightmostName(access.Expression), access.Name.Identifier.ValueText),
+                IdentifierNameSyntax id => (factory.Identifier.ValueText, id.Identifier.ValueText),
+                _ => (null, null),
+            };
+            if (owner is null)
+                continue;
+            methods.AddRange(Declarations(owner)
+                .SelectMany(c => c.Members.OfType<MethodDeclarationSyntax>())
+                .Where(m => m.Identifier.ValueText == method && !methods.Contains(m)));
+        }
+        return methods;
+    }
+
+    /// <summary>
+    /// A factory registered for several models often builds a different class per typeName:
+    /// <c>if (typeName.StartsWith("dmtx201c")) return new DmTx201CController(...)</c>, or a switch on
+    /// it. For each typeName, the first branch (in source order) whose string literals match it and
+    /// that creates a plugin class deriving from the factory's device class.
+    /// </summary>
+    private Dictionary<string, string> BranchDeviceClasses(
+        ClassDeclarationSyntax factory, string deviceClass, List<string> typeNames)
+    {
+        var branches = new List<(List<string> literals, bool prefix, bool contains, SyntaxNode body, string? returns)>();
+        var methods = BuildDeviceMethods(factory);
+        foreach (var method in methods)
+        {
+            var returns = RightmostName(method.ReturnType);
+            foreach (var node in method.DescendantNodes())
+            {
+                switch (node)
+                {
+                    case IfStatementSyntax ifs:
+                        var condition = ifs.Condition.ToString();
+                        branches.Add((StringLiterals(ifs.Condition).ToList(),
+                            condition.Contains(".StartsWith(", StringComparison.Ordinal),
+                            condition.Contains(".Contains(", StringComparison.Ordinal),
+                            ifs.Statement, returns));
+                        break;
+                    case SwitchSectionSyntax section:
+                        branches.Add((section.Labels.SelectMany(StringLiterals).ToList(), false, false, section, returns));
+                        break;
+                    case SwitchExpressionArmSyntax arm:
+                        branches.Add((StringLiterals(arm.Pattern).ToList(), false, false, arm.Expression, returns));
+                        break;
+                }
+            }
+        }
+        // A lookup table in the helper's class: { "dmrmc4kz100c", (k, n, i) => new DmRmc4kZ100CController(...) }
+        foreach (var cls in methods.Select(m => m.Parent).OfType<ClassDeclarationSyntax>().Distinct())
+        {
+            foreach (var element in cls.DescendantNodes().OfType<InitializerExpressionSyntax>()
+                         .Where(i => i.IsKind(SyntaxKind.ComplexElementInitializerExpression) && i.Expressions.Count == 2))
+            {
+                if (element.Expressions[0] is LiteralExpressionSyntax key && key.IsKind(SyntaxKind.StringLiteralExpression))
+                    branches.Add(([key.Token.ValueText], false, false, element.Expressions[1], null));
+            }
+        }
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var typeName in typeNames)
+        {
+            var lower = typeName.ToLowerInvariant();
+            var built = branches
+                .Where(b => b.literals.Any(l =>
+                {
+                    var literal = l.ToLowerInvariant();
+                    return lower == literal || (b.prefix && lower.StartsWith(literal, StringComparison.Ordinal))
+                        || (b.contains && lower.Contains(literal, StringComparison.Ordinal));
+                }))
+                .Select(b => b.body.DescendantNodesAndSelf().OfType<ObjectCreationExpressionSyntax>()
+                    .Select(c => RightmostName(c.Type))
+                    .FirstOrDefault(c => c != deviceClass &&
+                        (DerivesFrom(c, deviceClass) || (b.returns is not null && DerivesFrom(c, b.returns)))))
+                .FirstOrDefault(c => c is not null);
+            if (built is not null)
+                result[typeName] = built;
+        }
+        return result;
+    }
+
+    /// <summary>Whether a plugin class has <paramref name="ancestor"/> somewhere in its base list chain</summary>
+    private bool DerivesFrom(string className, string ancestor)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<string>([className]);
+        while (pending.TryDequeue(out var name))
+        {
+            if (!visited.Add(name))
+                continue;
+            foreach (var cls in Declarations(name))
+            {
+                foreach (var baseType in cls.BaseList?.Types ?? default)
+                {
+                    var baseName = RightmostName(baseType.Type);
+                    if (baseName == ancestor)
+                        return true;
+                    pending.Enqueue(baseName);
+                }
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -208,13 +327,11 @@ public sealed class SourceScanner
 
                 foreach (var creation in cls.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
                 {
+                    // Subclasses (RoutingInputPortWithVideoStatuses) take the same leading arguments
                     var typeName = RightmostName(creation.Type);
-                    var list = typeName switch
-                    {
-                        "RoutingInputPort" => ports.Inputs,
-                        "RoutingOutputPort" => ports.Outputs,
-                        _ => null,
-                    };
+                    var list = typeName.StartsWith("RoutingInputPort", StringComparison.Ordinal) ? ports.Inputs
+                        : typeName.StartsWith("RoutingOutputPort", StringComparison.Ordinal) ? ports.Outputs
+                        : null;
                     if (list is null)
                         continue;
 
@@ -256,9 +373,12 @@ public sealed class SourceScanner
             case LiteralExpressionSyntax lit when lit.IsKind(SyntaxKind.StringLiteralExpression):
                 return lit.Token.ValueText;
             case IdentifierNameSyntax or MemberAccessExpressionSyntax:
-                // A const or static readonly string field, anywhere in the repo
+                // A const or static readonly string field, anywhere in the repo, then a const in a
+                // referenced assembly (Essentials' RoutingPortNames)
                 var field = RightmostName(expression);
+                var owner = expression is MemberAccessExpressionSyntax access ? RightmostName(access.Expression) : null;
                 return _classes.Values.SelectMany(l => l)
+                    .Where(c => owner is null || c.Identifier.ValueText == owner)
                     .SelectMany(c => c.Members.OfType<FieldDeclarationSyntax>())
                     .SelectMany(f => f.Declaration.Variables)
                     .Where(v => v.Identifier.ValueText == field)
@@ -266,7 +386,8 @@ public sealed class SourceScanner
                     .OfType<LiteralExpressionSyntax>()
                     .Where(l => l.IsKind(SyntaxKind.StringLiteralExpression))
                     .Select(l => l.Token.ValueText)
-                    .FirstOrDefault();
+                    .FirstOrDefault()
+                    ?? ExternalConstant?.Invoke(owner, field);
             default:
                 return null;
         }
