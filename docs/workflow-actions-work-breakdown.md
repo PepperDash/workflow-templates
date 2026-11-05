@@ -1,5 +1,7 @@
 # Workflow actions migration: work breakdown
 
+> **Superseded 2026-11-05 by [ci-cd-plan.md](ci-cd-plan.md).** Kept for reference; where this disagrees with that page, that page wins.
+
 Status: **draft for assignment** · Written 2026-10-27 · Implements `docs/workflow-actions-migration-plan.md` (all decisions D1–D12 recorded there; section numbers below refer to it).
 
 How to use this document: each row is one work item sized for one person and one PR (or one settings change). Pick an item whose dependencies are done, put your name in **Owner**, and open an issue titled with the item ID. Sizes: **S** ≤ 1 day, **M** 2–4 days, **L** ≈ 1–2 weeks.

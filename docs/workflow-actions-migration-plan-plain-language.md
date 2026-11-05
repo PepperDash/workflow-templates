@@ -1,5 +1,7 @@
 # Reorganising our build automation: the plan in plain language
 
+> **Superseded 2026-11-05 by [ci-cd-plan.md](ci-cd-plan.md).** Kept for reference; where this disagrees with that page, that page wins.
+
 Status: **draft for review** · 2026-10-27 · This is a plain-language companion to `docs/workflow-actions-migration-plan.md`. The technical version is the reference; if the two ever disagree, the technical one wins.
 
 Who this is for: anyone who needs to understand or approve the plan without knowing how build automation (CI/CD) works.

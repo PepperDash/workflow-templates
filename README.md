@@ -12,7 +12,7 @@ Reusable GitHub workflows for building, versioning and publishing PepperDash pro
 
 ## Migration in progress
 
-The workflows are being rebuilt from versioned composite actions. Existing callers keep working. See the [migration plan](docs/workflow-actions-migration-plan.md) and [work breakdown](docs/workflow-actions-work-breakdown.md), or the plain-language versions of the [plan](docs/workflow-actions-migration-plan-plain-language.md) and [work breakdown](docs/workflow-actions-work-breakdown-plain-language.md).
+The workflows are being rebuilt from versioned composite actions. Existing callers keep working. The current plan is [docs/ci-cd-plan.md](docs/ci-cd-plan.md). Earlier detail: the [migration plan](docs/workflow-actions-migration-plan.md) and [work breakdown](docs/workflow-actions-work-breakdown.md), or the plain-language versions of the [plan](docs/workflow-actions-migration-plan-plain-language.md) and [work breakdown](docs/workflow-actions-work-breakdown-plain-language.md).
 
 ## Feedback
 

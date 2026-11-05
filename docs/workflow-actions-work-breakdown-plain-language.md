@@ -1,5 +1,7 @@
 # Who does what: the work breakdown in plain language
 
+> **Superseded 2026-11-05 by [ci-cd-plan.md](ci-cd-plan.md).** Kept for reference; where this disagrees with that page, that page wins.
+
 Status: **draft for assignment** · 2026-10-27 · Plain-language companion to `docs/workflow-actions-work-breakdown.md`. The technical version is the reference. Read `docs/workflow-actions-migration-plan-plain-language.md` first for the background and a glossary of terms.
 
 ## How to use this
