@@ -226,7 +226,8 @@ export function assemble({ facts, baseline, formSidecar, release }) {
     label: release.label,
     version,
     tag: release.tag,
-    prerelease: version.includes('-'),
+    // A hyphen in build metadata (+build-main) doesn't make it a prerelease
+    prerelease: version.split('+')[0].includes('-'),
     repoUrl: release.repoUrl,
     commitSha: release.commitSha,
     publishedAt: release.publishedAt,
@@ -234,8 +235,10 @@ export function assemble({ facts, baseline, formSidecar, release }) {
     assets: release.assets,
     typeNames: {},
   };
-  if (release.kind === 'plugin' && facts?.minimumEssentialsVersion) {
-    doc.minimumEssentialsVersion = facts.minimumEssentialsVersion;
+  // A requirement the code no longer shows (set through a helper, say) still holds
+  const minimum = facts?.minimumEssentialsVersion ?? baseline?.minimumEssentialsVersion;
+  if (release.kind === 'plugin' && minimum) {
+    doc.minimumEssentialsVersion = minimum;
   }
 
   const report = {};

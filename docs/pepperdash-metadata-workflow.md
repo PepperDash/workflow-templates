@@ -42,19 +42,20 @@ jobs:
 |---|---|---|
 | `tag` | required | The release tag |
 | `kind` | `plugin` | `essentials`, `plugin`, `userInterface` or `touchpanelWrapper`. The UI kinds have no device types, so nothing is built |
-| `package-id` | the csproj `<PackageId>` | The repo name for UI kinds |
+| `package-id` | the csproj `<PackageId>`, else its `<AssemblyName>`, else its file name | The repo name for UI kinds |
 | `label` | the repo name without `epi-`, title-cased | Portal admins can rename it |
 | `mode` | `publish` | `withdraw` removes the release from Portal's catalog; its files are kept |
-| `templates-ref` | `main` | Which version of this repo's tools to run |
 
 ## What it does
+
+**`tools`** finds the commit this workflow file was loaded from (`@main`, `@v1` or a branch, from the `job_workflow_sha` claim of its OIDC token). The other jobs run this repo's tools from that same commit, so a caller can't run tools from a ref other than the workflow UDM trusts.
 
 **`extract`** builds the repo and runs [`tools/metadata-extract`](../tools/metadata-extract/README.md), which reads the factories, device classes, config classes and routing ports from the source and the built DLLs. Building runs the repo's own MSBuild code, so this job has read-only permissions and no OIDC token.
 
 **`publish`** runs no code from the repo:
 
 1. Downloads the release's `.cpz`, `.cplz`, `.ch5z` and `.zip` files and hashes them.
-2. Finds the **baseline**: the newest earlier release that has a `pepperdash-metadata.json` and whose commit is an ancestor of this one. Going by ancestry means a feature-branch prerelease never becomes the baseline for `main`, or the other way round.
+2. Finds the **baseline**: the newest release published before this one that has a `pepperdash-metadata.json` and whose commit is an ancestor of this one. Going by ancestry means a feature-branch prerelease never becomes the baseline for `main`, or the other way round.
 3. Assembles the document ([`tools/release-metadata`](../tools/release-metadata)):
    - `schema`, `interfaces` and `routingPorts` come from the code. Where the code gives nothing (a schema it couldn't build, ports whose keys it couldn't read), the baseline's value is kept.
    - `label`, `controlMethods`, `controlPorts`, `deviceKind`, `catalog` and the other UI hints come from the baseline.

@@ -127,8 +127,10 @@ if (args.withdraw && (!args['repo-url'] || !args.version)) {
 const rows = [];
 let failed = false;
 for (const base of bases) {
-  const host = new URL(base).host;
+  // A malformed entry fails on its own, labelled as written
+  let host = base;
   try {
+    host = new URL(base).host;
     const outcome = args.withdraw ? await withdraw(base) : await register(base, doc);
     rows.push(`| ${host} | ${outcome} |`);
     console.log(`${host}: ${outcome}`);

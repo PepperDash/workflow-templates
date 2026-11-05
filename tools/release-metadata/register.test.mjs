@@ -123,6 +123,16 @@ describe('register.mjs', () => {
     assert.ok(requests.some((r) => r.path === '/second/v3/essentials/releases/second-1/complete'));
   });
 
+  it('carries on past a malformed URL', async () => {
+    requests = [];
+    putStatuses = {};
+    const summary = join(dir, 'summary-bad-url.md');
+    const result = await runScript(['--urls', `not a url,${base}/second`, '--document', join(dir, 'doc.json'), '--assets-dir', dir, '--summary', summary]);
+    assert.equal(result.code, 1);
+    assert.ok(requests.some((r) => r.path === '/second/v3/essentials/releases/second-1/complete'));
+    assert.match(readFileSync(summary, 'utf8'), /\| not a url \| \*\*failed\*\*/);
+  });
+
   it('withdraws by repoUrl and version', async () => {
     requests = [];
     const result = await runScript([

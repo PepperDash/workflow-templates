@@ -52,12 +52,15 @@ def output_dll(project):
 
 
 def package_id(project_paths):
-    """The first <PackageId>, else the first project's file name (NuGet's default)"""
+    """The first <PackageId>, else NuGet's default: the first project's <AssemblyName>, else its file name"""
     for p in project_paths:
         m = re.search(r'<PackageId>([^<$]+)</PackageId>', read(p))
         if m:
             return m.group(1).strip()
-    return os.path.splitext(os.path.basename(project_paths[0]))[0] if project_paths else None
+    if not project_paths:
+        return None
+    m = re.search(r'<AssemblyName>([^<$]+)</AssemblyName>', read(project_paths[0]))
+    return m.group(1).strip() if m else os.path.splitext(os.path.basename(project_paths[0]))[0]
 
 
 def build_and_extract(repo_dir, facts_path):

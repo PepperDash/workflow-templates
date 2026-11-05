@@ -175,6 +175,19 @@ describe('assemble and gate', () => {
     assert.match(gate({ doc, facts: extracted, formSidecar: null }).errors[0], /commitSha/);
   });
 
+  it('reads a hyphen in build metadata as part of a stable version', () => {
+    const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, release: { ...release, tag: 'v1.2.3+build-main' } });
+    assert.equal(doc.version, '1.2.3+build-main');
+    assert.equal(doc.prerelease, false);
+  });
+
+  it("keeps the baseline's minimum Essentials version when the code shows none", () => {
+    const baseline = { minimumEssentialsVersion: '2.0.0', typeNames: {} };
+    const unknown = { ...extracted, minimumEssentialsVersion: null };
+    assert.equal(assemble({ facts: unknown, baseline, formSidecar: null, release }).doc.minimumEssentialsVersion, '2.0.0');
+    assert.equal(assemble({ facts: extracted, baseline, formSidecar: null, release }).doc.minimumEssentialsVersion, '3.0.0');
+  });
+
   it('gives UI kinds no typeNames', () => {
     const { doc } = assemble({ facts: null, baseline: null, formSidecar: null, release: { ...release, kind: 'userInterface' } });
     assert.deepEqual(doc.typeNames, {});
