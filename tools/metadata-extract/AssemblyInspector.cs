@@ -210,18 +210,25 @@ public sealed class AssemblyInspector : IDisposable
         if (string.IsNullOrWhiteSpace(nugetDir))
             nugetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
         folders.Add(nugetDir);
+        var libraries = doc.RootElement.TryGetProperty("libraries", out var l) ? l : default;
 
         foreach (var target in targets.EnumerateObject())
         {
             foreach (var lib in target.Value.EnumerateObject())
             {
-                var slash = lib.Name.LastIndexOf('/');
-                if (slash < 0)
+                // NuGet stores packages as <id>/<version> in lower case, which matters on case-sensitive
+                // file systems: "PepperDashEssentials/3.0.0-feature-X.1" is in pepperdashessentials/3.0.0-feature-x.1.
+                // The restore records that path in libraries; derive it when it's missing
+                var relative = libraries.ValueKind == JsonValueKind.Object &&
+                    libraries.TryGetProperty(lib.Name, out var library) &&
+                    library.TryGetProperty("path", out var p) && p.GetString() is { Length: > 0 } recorded
+                        ? recorded
+                        : lib.Name.ToLowerInvariant();
+                if (!relative.Contains('/'))
                     continue;
-                var packageId = lib.Name[..slash].ToLowerInvariant();
-                var version = lib.Name[(slash + 1)..];
                 // The first folder that has the package, as NuGet resolves it
-                var packageDir = folders.Select(f => Path.Combine(f, packageId, version)).FirstOrDefault(Directory.Exists);
+                var packageDir = folders.Select(f => Path.Combine(f, relative.Replace('/', Path.DirectorySeparatorChar)))
+                    .FirstOrDefault(Directory.Exists);
                 if (packageDir is null)
                     continue;
                 foreach (var kind in new[] { "compile", "runtime" })
