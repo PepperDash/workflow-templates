@@ -201,8 +201,8 @@ public sealed class SourceScanner
     /// deserializes. A branch's own statements don't include those of branches nested inside it, and
     /// a simple negated condition (<c>typeName != "x"</c>, <c>!typeName.StartsWith("x")</c>,
     /// <c>typeName is not "x"</c>) is a branch for every typeName it doesn't name. Any other negated
-    /// condition can't establish which typeName it runs for: it is no branch, and its body belongs to
-    /// none.
+    /// condition can't establish which typeName it runs for: it is no branch, its body belongs to
+    /// none, and a branch around it that builds a device in it decides nothing.
     /// </summary>
     private (Dictionary<string, string> classes, Dictionary<string, string> configs) Branches(
         ClassDeclarationSyntax factory, string deviceClass, List<string> typeNames)
@@ -228,9 +228,10 @@ public sealed class SourceScanner
                                 ((SyntaxNode)not.Pattern, true),
                             _ => ((SyntaxNode)ifs.Condition, false),
                         };
-                        // Negated again inside (a != "x" && !b): which typeNames it runs for is unknown
+                        // Negated again inside (a != "x" && !b), or a compound under the negation
+                        // (!(a && b)): which typeNames it runs for is unknown
                         SyntaxNode[] inside = match is BinaryExpressionSyntax ne && inverted ? [ne.Left, ne.Right] : [match];
-                        if (inside.Any(IsNegated))
+                        if (inside.Any(IsNegated) || (inverted && IsCompound(match)))
                         {
                             negated.Add(ifs.Statement);
                             break;
@@ -281,12 +282,23 @@ public sealed class SourceScanner
                 // Innermost first; OrderByDescending is stable, so source order otherwise
                 .OrderByDescending(b => b.body.Ancestors().Count())
                 .ToList();
-            var built = matching
-                .Select(b => Own(b.body).OfType<ObjectCreationExpressionSyntax>()
+            string? Device(IEnumerable<SyntaxNode> nodes, string? returns) =>
+                nodes.OfType<ObjectCreationExpressionSyntax>()
                     .Select(c => RightmostName(c.Type))
                     .FirstOrDefault(c => c == deviceClass ||
-                        DerivesFrom(c, deviceClass) || (b.returns is not null && DerivesFrom(c, b.returns))))
-                .FirstOrDefault(c => c is not null);
+                        DerivesFrom(c, deviceClass) || (returns is not null && DerivesFrom(c, returns)));
+            string? built = null;
+            foreach (var b in matching)
+            {
+                // A device built under a condition that can't be evaluated may be the one that runs: unknown
+                var undecided = b.body.DescendantNodesAndSelf(n => n == b.body || !dispatchBodies.Contains(n))
+                    .Where(n => n != b.body && negated.Contains(n));
+                if (undecided.Any(n => Device(n.DescendantNodesAndSelf(), b.returns) is not null))
+                    break;
+                built = Device(Own(b.body), b.returns);
+                if (built is not null)
+                    break;
+            }
             // The innermost branch decides, even when it builds the factory's own class
             if (built is not null && built != deviceClass)
                 classes[typeName] = built;
@@ -296,6 +308,11 @@ public sealed class SourceScanner
         }
         return (classes, configs);
     }
+
+    private static bool IsCompound(SyntaxNode condition) =>
+        condition.DescendantNodesAndSelf().Any(n =>
+            n.IsKind(SyntaxKind.LogicalAndExpression) || n.IsKind(SyntaxKind.LogicalOrExpression) ||
+            n.IsKind(SyntaxKind.AndPattern) || n.IsKind(SyntaxKind.OrPattern));
 
     private static bool IsNegated(SyntaxNode condition) =>
         condition.DescendantNodesAndSelf().Any(n =>
