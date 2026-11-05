@@ -58,6 +58,7 @@ jobs:
 2. Finds the **baseline**: the newest release published before this one that has a `pepperdash-metadata.json` and whose commit is an ancestor of this one. Going by ancestry means a feature-branch prerelease never becomes the baseline for `main`, or the other way round.
 3. Assembles the document ([`tools/release-metadata`](../tools/release-metadata)):
    - `schema`, `interfaces` and `routingPorts` come from the code. Where the code gives nothing (a schema it couldn't build, ports whose keys it couldn't read), the baseline's value is kept.
+   - Each config property's `description` is its `/// <summary>` in the code, otherwise the baseline's. Its `title` is the baseline's, otherwise one made from the property name (`warmupTimeMs` → "Warmup Time Ms"), since the code has nowhere to write one.
    - `label`, `controlMethods`, `controlPorts`, `deviceKind`, `catalog` and the other UI hints come from the baseline.
    - `formMetadata` comes from the repo's `.pepperdash/form-metadata.json`, otherwise the baseline. Each `schemaId` is pointed at the matching property's `$id` in this release's schema, so a sidecar written as `#root/propertiesConfig/x` still matches a schema that uses `#root/x`.
 4. **Gate.** Any error fails the job before anything is published:
@@ -68,7 +69,7 @@ jobs:
 5. Attaches `pepperdash-metadata.json` to the release, replacing an earlier copy.
 6. Registers the release with each UDM in `PEPPERDASH_UDM_URLS`, uploads its files, and marks it complete.
 
-The job summary lists, for each typeName, where each field came from and what's missing, then what changed since the baseline.
+The job summary lists, for each typeName, where each field came from and what's missing, including the config properties that have no description anywhere, then what changed since the baseline.
 
 ## Portal registration
 

@@ -8,7 +8,9 @@ import {
   gate,
   idPath,
   labelFor,
+  mergeSchemaText,
   resolveSchemaIds,
+  summarize,
   versionOf,
 } from './lib.mjs';
 
@@ -58,7 +60,12 @@ describe('assembleTypeName', () => {
     assert.deepEqual(entry.interfaces, ['IRoutingSinkWithFeedback']);
     assert.ok(entry.schema.$defs.propertiesConfig.properties.host);
     assert.deepEqual(entry.routingPorts, { inputs: [port('HdmiIn1')], outputs: [] });
-    assert.deepEqual(sources, { schema: 'code', interfaces: 'code', routingPorts: 'code' });
+    assert.deepEqual(sources, {
+      schema: 'code',
+      descriptions: { code: 0, baseline: 0, missing: ['host'] },
+      interfaces: 'code',
+      routingPorts: 'code',
+    });
     assert.deepEqual(gaps, []);
   });
 
@@ -101,6 +108,74 @@ describe('assembleTypeName', () => {
     assert.equal(entry.description, 'From [Description]');
     assert.equal(sources.formMetadata, 'sidecar');
     assert.equal(entry.formMetadata.propertyMetadata.properties.host.schemaId, '#root/host');
+  });
+});
+
+describe('mergeSchemaText', () => {
+  const withText = (schema, text) => {
+    const copy = structuredClone(schema);
+    for (const [name, value] of Object.entries(text)) Object.assign(copy.$defs.propertiesConfig.properties[name], value);
+    return copy;
+  };
+
+  it("keeps the code's descriptions and fills the rest from the baseline", () => {
+    const code = withText(schemaWith('host', 'port', 'extra'), {
+      host: { title: 'Host', description: 'From the summary' },
+      port: { title: 'Port' },
+    });
+    const baseline = withText(schemaWith('host', 'Port'), {
+      host: { title: 'Host name', description: 'Old text' },
+      Port: { title: 'TCP port', description: 'The port to connect to' },
+    });
+    const { schema, descriptions } = mergeSchemaText(code, baseline);
+    const properties = schema.$defs.propertiesConfig.properties;
+    assert.deepEqual(properties.host, { $id: '#root/host', type: 'string', title: 'Host name', description: 'From the summary' });
+    // Matched without regard to case, as Essentials reads config
+    assert.deepEqual(properties.port, { $id: '#root/port', type: 'string', title: 'TCP port', description: 'The port to connect to' });
+    assert.deepEqual(descriptions, { code: 1, baseline: 1, missing: ['extra'] });
+    // The facts aren't changed
+    assert.equal(code.$defs.propertiesConfig.properties.port.description, undefined);
+  });
+
+  it('walks nested objects, array items and dictionary values, to any depth', () => {
+    const element = (description) => ({ type: 'object', properties: { name: { type: 'string', ...description } } });
+    const nested = (description) => ({
+      $defs: { propertiesConfig: { properties: {
+        monitor: { type: 'object', properties: { timeout: { type: 'integer', ...description } } },
+        inputs: { type: 'array', items: element(description) },
+        // List<List<T>>, Dictionary<string, T> and Dictionary<string, T[]>
+        grid: { type: 'array', items: { type: 'array', items: element(description) } },
+        byKey: { type: 'object', additionalProperties: element(description) },
+        listsByKey: { type: 'object', additionalProperties: { type: 'array', items: element(description) } },
+      } } },
+    });
+    const { schema, descriptions } = mergeSchemaText(nested({}), nested({ description: 'Old' }));
+    const properties = schema.$defs.propertiesConfig.properties;
+    assert.equal(properties.monitor.properties.timeout.description, 'Old');
+    assert.equal(properties.inputs.items.properties.name.description, 'Old');
+    assert.equal(properties.grid.items.items.properties.name.description, 'Old');
+    assert.equal(properties.byKey.additionalProperties.properties.name.description, 'Old');
+    assert.equal(properties.listsByKey.additionalProperties.items.properties.name.description, 'Old');
+    assert.deepEqual(descriptions.missing, ['monitor', 'inputs', 'grid', 'byKey', 'listsByKey']);
+
+    assert.deepEqual(mergeSchemaText(nested({}), undefined).descriptions.missing, [
+      'monitor', 'monitor.timeout', 'inputs', 'inputs[].name', 'grid', 'grid[][].name',
+      'byKey', 'byKey{}.name', 'listsByKey', 'listsByKey{}[].name',
+    ]);
+    // additionalProperties: true isn't a schema to walk
+    assert.doesNotThrow(() => mergeSchemaText({ $defs: { propertiesConfig: { properties: { x: { type: 'object', additionalProperties: true } } } } }));
+  });
+
+  it('lists what has no description in the job summary', () => {
+    const { doc, report } = assemble({
+      facts: { typeNames: { thing: facts() } },
+      baseline: null,
+      formSidecar: null,
+      release: { kind: 'plugin', packageId: 'P', label: 'P', tag: 'v1.0.0', repoUrl: 'https://github.com/o/r', commitSha: 'a'.repeat(40), publishedAt: '2026-01-01T00:00:00Z', assets: [] },
+    });
+    const markdown = summarize({ doc, report, gateResult: { errors: [], warnings: [] }, changes: null });
+    assert.match(markdown, /\| `thing` \| code \| 0 code, 0 baseline, 1 missing \|/);
+    assert.match(markdown, /- `thing`: `host`/);
   });
 });
 

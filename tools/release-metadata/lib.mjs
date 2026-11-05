@@ -148,6 +148,46 @@ export function resolveSchemaIds(formMetadata, schema) {
   };
 }
 
+const caseInsensitive = (object, key) =>
+  object?.[key] ?? Object.entries(object ?? {}).find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1];
+
+/**
+ * Copies the baseline's titles and descriptions onto a schema built from the code, property by
+ * property. A `<summary>` in the code wins over the baseline's description; the code's titles are
+ * only its property names spaced out, so a baseline title (hand-written, or the same) wins over them.
+ * Returns the merged schema and, by property path, which descriptions came from where.
+ */
+export function mergeSchemaText(schema, baselineSchema) {
+  const merged = structuredClone(schema);
+  const descriptions = { code: 0, baseline: 0, missing: [] };
+  const isSchema = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  // A schema's own properties, then those of the element schemas it contains, to any depth: arrays
+  // (items, path "x[]") and dictionaries (additionalProperties, path "x{}") can nest each other
+  const walk = (node, base, path) => {
+    if (isSchema(node?.items)) walk(node.items, base?.items, `${path}[]`);
+    if (isSchema(node?.additionalProperties)) {
+      walk(node.additionalProperties, isSchema(base?.additionalProperties) ? base.additionalProperties : undefined, `${path}{}`);
+    }
+    for (const [name, property] of Object.entries(node?.properties ?? {})) {
+      if (!property || typeof property !== 'object') continue;
+      const baseProperty = caseInsensitive(base?.properties, name);
+      const propertyPath = path ? `${path}.${name}` : name;
+      if (typeof baseProperty?.title === 'string') property.title = baseProperty.title;
+      if (property.description) {
+        descriptions.code++;
+      } else if (typeof baseProperty?.description === 'string' && baseProperty.description) {
+        property.description = baseProperty.description;
+        descriptions.baseline++;
+      } else {
+        descriptions.missing.push(propertyPath);
+      }
+      walk(property, baseProperty, propertyPath);
+    }
+  };
+  walk(merged.$defs?.propertiesConfig, baselineSchema?.$defs?.propertiesConfig, '');
+  return { schema: merged, descriptions };
+}
+
 /**
  * One typeName's metadata from its facts, the baseline's entry and the form metadata sidecar.
  * Returns the entry and, per field, where it came from, plus what's missing.
@@ -158,11 +198,16 @@ export function assembleTypeName(facts, baseline, formSidecarEntry) {
   const gaps = [];
 
   if (facts.schema) {
-    entry.schema = facts.schema;
+    const { schema, descriptions } = mergeSchemaText(facts.schema, baseline?.schema);
+    entry.schema = schema;
     sources.schema = 'code';
+    sources.descriptions = descriptions;
   } else if (baseline?.schema) {
     entry.schema = baseline.schema;
     sources.schema = 'baseline';
+    // Merging a schema onto itself only counts what it has
+    const { descriptions } = mergeSchemaText(baseline.schema);
+    sources.descriptions = { code: 0, baseline: descriptions.code, missing: descriptions.missing };
   } else {
     entry.schema = EMPTY_SCHEMA;
     sources.schema = 'empty';
@@ -363,12 +408,26 @@ export function summarize({ doc, report, gateResult, changes }) {
 
   const typeNames = Object.keys(report);
   if (typeNames.length) {
-    lines.push('| typeName | schema | interfaces | routingPorts | formMetadata | gaps |', '|---|---|---|---|---|---|');
+    lines.push(
+      '| typeName | schema | descriptions | interfaces | routingPorts | formMetadata | gaps |',
+      '|---|---|---|---|---|---|---|',
+    );
     for (const typeName of typeNames) {
       const { sources, gaps } = report[typeName];
-      lines.push(`| \`${typeName}\` | ${sources.schema} | ${sources.interfaces} | ${sources.routingPorts} | ${sources.formMetadata ?? '–'} | ${gaps.join(', ') || '–'} |`);
+      const d = sources.descriptions;
+      const descriptions = d ? `${d.code} code, ${d.baseline} baseline, ${d.missing.length} missing` : '–';
+      lines.push(`| \`${typeName}\` | ${sources.schema} | ${descriptions} | ${sources.interfaces} | ${sources.routingPorts} | ${sources.formMetadata ?? '–'} | ${gaps.join(', ') || '–'} |`);
     }
     lines.push('');
+    const missing = typeNames.filter((t) => report[t].sources.descriptions?.missing.length);
+    if (missing.length) {
+      // A /// <summary> on the config property fills these in the next release
+      lines.push('<details><summary>Config properties with no description (add a <code>/// &lt;summary&gt;</code> to each)</summary>', '');
+      for (const typeName of missing) {
+        lines.push(`- \`${typeName}\`: ${report[typeName].sources.descriptions.missing.map((p) => `\`${p}\``).join(', ')}`);
+      }
+      lines.push('', '</details>', '');
+    }
     const rewrites = typeNames.flatMap((t) => (report[t].sources.schemaIdRewrites ?? []).map((r) => `- \`${t}\` ${r}`));
     if (rewrites.length) lines.push('formMetadata schemaIds pointed at this schema\'s $ids:', '', ...rewrites, '');
   }
