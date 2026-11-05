@@ -60,6 +60,12 @@ Fix these in `essentialsplugins-4Series-builds.yml` first. They are small and ea
 | No `timeout-minutes` | Set one per job |
 | `shell: powershell` mixed with `shell: pwsh` | Standardise on `pwsh` |
 | Legacy `essentialsplugins-getversion.yml` creates the tag and release before the build | Already fixed by `getversion.yml`; move callers to it |
+| `BUILD_TYPE` is `Debug` whenever `channel` is non-empty, so prerelease (feature-branch) builds are compiled in Debug **and** published to nuget.org from public repos | Decide deliberately: build prereleases in Release, or do not publish them to nuget.org |
+| nuget.org publish silently skips (`exit 0`, no summary) when the repo is not public, and also `exit 0`s when no `.nupkg` is found | Write a summary line for the skip; a missing package on a publish run should fail |
+| Publish steps wrap `nuget push` in `try/catch`, but a non-zero exit from a native command does not throw, so the error-reporting `catch` never runs, and in the loop only the last package's exit code reaches the step | Check `$LASTEXITCODE` after each push and `throw` |
+| `nuget setApiKey` writes the key into the runner's NuGet config | Use `dotnet nuget push --api-key` (what essentials-build-tools does) |
+| The release attaches only `.cpz`/`.cplz` (`output\**\*.*(cpz|cplz)`, an extglob whose behaviour was not tested); the `.nupkg` is not attached | Confirm what is attached on a real run; use `*.{cpz,cplz}` and attach the `.nupkg` if wanted |
+| Callers use `secrets: inherit` with `@main`, so any change merged to `main` here runs with every secret the caller can see (including `NUGET_API_KEY`) | Pin callers to a tag (Step 2) and pass only the secrets the workflow needs |
 
 Done when: each row is closed or consciously declined in the PR.
 
