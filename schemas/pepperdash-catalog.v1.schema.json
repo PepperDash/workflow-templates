@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/PepperDash/workflow-templates/main/schemas/pepperdash-catalog.v1.schema.json",
+  "title": "PepperDash catalog sidecar",
+  "description": ".pepperdash/catalog.json in a plugin repo: pins each typeName's category and models by name. CI resolves the names against UDM's reference data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["typeNames"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "typeNames": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "models"],
+        "properties": {
+          "category": { "type": "string", "minLength": 1 },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["manufacturer", "model"],
+              "properties": {
+                "manufacturer": { "type": "string", "minLength": 1 },
+                "model": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "propose": {
+            "description": "Queue names that don't exist yet as proposals instead of failing the build",
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

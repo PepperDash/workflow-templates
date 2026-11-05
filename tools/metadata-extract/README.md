@@ -9,7 +9,7 @@ It works in two halves. Neither runs any code from the repo being read.
 | Source ([Roslyn](https://github.com/dotnet/roslyn) syntax only) | the repo's `.cs` files, outside `bin`, `obj` and test folders | each factory's `TypeNames` and `MinimumEssentialsFrameworkVersion`; its device class, and the more specific class `BuildDevice` builds for a typeName when it branches on it; its config class (from `ToObject<T>()`/`DeserializeObject<T>()` in the typeName's `BuildDevice` branch or elsewhere in `BuildDevice`, directly or in a helper it calls, or else in the device constructor); routing ports with literal or constant keys; property defaults; `/// <summary>` text; `[Description]` |
 | Assembly ([MetadataLoadContext](https://learn.microsoft.com/dotnet/standard/assembly/inspect-contents-using-metadataloadcontext)) | the built DLLs, resolving references from their output folders and the restore's `obj/project.assets.json` | every interface each device implements, including those inherited from Essentials base classes; the config class from the device constructor's parameters when the source names none; the config schema from the real property types; every interface defined by the assemblies and, transitively, the non-framework assemblies they reference; the values of `const` strings the source uses as port keys (`RoutingPortNames.HdmiIn1`) |
 
-Without `--assembly`, only the source half runs and `interfaces` and `schema` are `null`.
+Without `--assembly`, only the source half runs and `interfaces` and `schema` are `null`. `interfaces` is also `null` when a missing reference makes a device's interfaces unreadable; `[]` means it has none.
 
 ## Usage
 

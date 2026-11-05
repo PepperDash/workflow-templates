@@ -56,8 +56,11 @@ public sealed class AssemblyInspector : IDisposable
         return matches.FirstOrDefault() ?? _types.FirstOrDefault(t => t.Name == simpleName);
     }
 
-    /// <summary>Every interface outside System.*, by simple name without generic arity</summary>
-    public List<string> Interfaces(Type type)
+    /// <summary>
+    /// Every interface outside System.*, by simple name without generic arity; null when a missing
+    /// reference makes the list unknowable, which isn't the same as a device with none
+    /// </summary>
+    public List<string>? Interfaces(Type type)
     {
         try
         {
@@ -70,8 +73,8 @@ public sealed class AssemblyInspector : IDisposable
         }
         catch (FileNotFoundException e)
         {
-            Warnings.Add($"{type.Name}: interfaces incomplete, missing reference: {e.Message}");
-            return [];
+            Warnings.Add($"{type.Name}: interfaces unknown, missing reference: {e.Message}");
+            return null;
         }
     }
 

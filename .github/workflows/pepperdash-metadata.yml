@@ -1,0 +1,291 @@
+name: PepperDash Release Metadata
+
+# Builds pepperdash-metadata.json for one GitHub release (schemas/pepperdash-metadata.v1.schema.json),
+# attaches it to the release, and registers the release and its .cpz/.cplz/.ch5z/.zip files with
+# Portal's UDM API in every environment listed in the PEPPERDASH_UDM_URLS Actions variable.
+# See docs/pepperdash-metadata-workflow.md.
+#
+# Call it after the release's files are uploaded, from a job that grants
+#   permissions: { contents: write, id-token: write }
+#
+#   metadata:
+#     needs: [getVersion, build-4Series]
+#     if: needs.getVersion.outputs.newVersion == 'true'
+#     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
+#     permissions: { contents: write, id-token: write }
+#     with:
+#       tag: ${{ needs.getVersion.outputs.tag }}
+#
+# and with `mode: withdraw` from `on: release: types: [deleted]`.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'The release tag, e.g. v4.0.0-feature-v3-migration.5'
+        required: true
+        type: string
+      kind:
+        description: 'essentials, plugin, userInterface or touchpanelWrapper'
+        required: false
+        type: string
+        default: plugin
+      package-id:
+        description: 'Overrides the csproj <PackageId> (the repo name for UI kinds)'
+        required: false
+        type: string
+        default: ''
+      label:
+        description: 'Display name; defaults to the repo name without epi-, title-cased'
+        required: false
+        type: string
+        default: ''
+      mode:
+        description: 'publish, or withdraw (the GitHub release was deleted)'
+        required: false
+        type: string
+        default: publish
+
+env:
+  TAG: ${{ inputs.tag }}
+  TOOLS: templates/tools
+
+jobs:
+  # The tools run from the commit this workflow file was loaded from, the one the OIDC token's
+  # job_workflow_ref names to UDM, so a caller can't point them at another ref. GitHub only puts
+  # that commit in the token. The token is never printed or passed on.
+  tools:
+    if: inputs.mode == 'publish' || inputs.mode == 'withdraw'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - name: Find this workflow's commit
+        id: sha
+        run: |
+          token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=pepperdash-workflow-templates" | jq -r .value)
+          echo "::add-mask::$token"
+          payload=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
+          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+          claims=$(base64 -d <<<"$payload")
+          ref=$(jq -r .job_workflow_ref <<<"$claims")
+          sha=$(jq -r .job_workflow_sha <<<"$claims")
+          case "$ref" in
+            PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@*) ;;
+            *) echo "::error::unexpected job_workflow_ref: $ref"; exit 1 ;;
+          esac
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no job_workflow_sha in the token"; exit 1; }
+          echo "Tools from $ref ($sha)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  # Builds the repo, which runs its own MSBuild code, so this job gets no write access and no OIDC token
+  extract:
+    needs: tools
+    if: inputs.mode == 'publish' && (inputs.kind == 'plugin' || inputs.kind == 'essentials')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the release
+        uses: actions/checkout@v6
+        with:
+          # A branch of the same name would win over an unqualified ref
+          ref: refs/tags/${{ inputs.tag }}
+          path: repo
+
+      - name: Checkout workflow-templates
+        uses: actions/checkout@v6
+        with:
+          repository: PepperDash/workflow-templates
+          ref: ${{ needs.tools.outputs.sha }}
+          path: templates
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build and extract
+        run: |
+          dotnet build "$TOOLS/metadata-extract" -c Release -nologo -v q
+          python3 "$TOOLS/metadata-extract/build_and_extract.py" repo facts.json --build-json build.json
+
+      - name: Upload facts
+        uses: actions/upload-artifact@v7
+        with:
+          name: metadata-facts
+          path: |
+            facts.json
+            build.json
+          retention-days: 30
+
+  publish:
+    needs: [tools, extract]
+    # extract is skipped for UI kinds; publish still runs for them
+    if: >-
+      always() && inputs.mode == 'publish' && needs.tools.result == 'success' &&
+      (needs.extract.result == 'success' || needs.extract.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UDM_URLS: ${{ vars.PEPPERDASH_UDM_URLS }}
+    steps:
+      - name: Checkout the repo (history and sidecars only; nothing is built here)
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          path: repo
+
+      - name: Checkout workflow-templates
+        uses: actions/checkout@v6
+        with:
+          repository: PepperDash/workflow-templates
+          ref: ${{ needs.tools.outputs.sha }}
+          path: templates
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install tools
+        run: npm ci --prefix "$TOOLS/release-metadata" --no-audit --no-fund
+
+      - name: Download facts
+        if: needs.extract.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: metadata-facts
+
+      - name: Download release files
+        id: release
+        run: |
+          mkdir -p assets
+          # A failed lookup stops the job; a release with none of these files has an empty list
+          names=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          { grep -iE '\.(cpz|cplz|ch5z|zip)$' <<<"$names" || true; } | while read -r name; do
+            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$name" -D assets
+          done
+          echo "published-at=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json publishedAt,createdAt --jq '.publishedAt // .createdAt')" >> "$GITHUB_OUTPUT"
+          echo "commit-sha=$(git -C repo rev-list -n 1 "$TAG")" >> "$GITHUB_OUTPUT"
+          ls -l assets
+
+      # The newest release published before this one with a metadata document whose commit is an
+      # ancestor of this one, so a feature-branch prerelease never becomes main's baseline or the
+      # other way round, and re-running an old release doesn't take a newer one's metadata
+      - name: Find the baseline
+        id: baseline
+        env:
+          PUBLISHED_AT: ${{ steps.release.outputs.published-at }}
+        run: |
+          # Every release, not just the newest 100, before filtering by date
+          tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft | not) | {tag: .tag_name, at: (.published_at // .created_at)}' \
+            | jq -rs --arg at "$PUBLISHED_AT" 'map(select(.at < $at)) | sort_by(.at) | reverse | .[].tag')
+          for tag in $tags; do
+            [ "$tag" = "$TAG" ] && continue
+            sha=$(git -C repo rev-list -n 1 "$tag" 2>/dev/null) || continue
+            git -C repo merge-base --is-ancestor "$sha" "$TAG" || continue
+            gh release download "$tag" -R "$GITHUB_REPOSITORY" -p pepperdash-metadata.json -D baseline 2>/dev/null || continue
+            # The document's own commit, in case the tag was moved after it was generated
+            doc_sha=$(jq -r '.commitSha // empty' baseline/pepperdash-metadata.json)
+            if [ -n "$doc_sha" ] && git -C repo merge-base --is-ancestor "$doc_sha" "$TAG" 2>/dev/null; then
+              echo "Baseline: $tag"
+              echo "file=baseline/pepperdash-metadata.json" >> "$GITHUB_OUTPUT"
+              break
+            fi
+            echo "Skipping $tag: its metadata's commit ${doc_sha:-(none)} isn't an ancestor of $TAG"
+            rm -f baseline/pepperdash-metadata.json
+          done
+
+      - name: Assemble and check pepperdash-metadata.json
+        env:
+          KIND: ${{ inputs.kind }}
+          PACKAGE_ID: ${{ inputs.package-id }}
+          LABEL: ${{ inputs.label }}
+          COMMIT_SHA: ${{ steps.release.outputs.commit-sha }}
+          PUBLISHED_AT: ${{ steps.release.outputs.published-at }}
+          BASELINE: ${{ steps.baseline.outputs.file }}
+        run: |
+          if [ -z "$PACKAGE_ID" ] && [ -f build.json ]; then
+            PACKAGE_ID=$(jq -r '.packageId // empty' build.json)
+          fi
+          PACKAGE_ID=${PACKAGE_ID:-${GITHUB_REPOSITORY#*/}}
+          args=(
+            --kind "$KIND"
+            --package-id "$PACKAGE_ID"
+            --tag "$TAG"
+            --repo-url "https://github.com/$GITHUB_REPOSITORY"
+            --commit-sha "$COMMIT_SHA"
+            --published-at "$PUBLISHED_AT"
+            --assets-dir assets
+            --out pepperdash-metadata.json
+            --summary summary.md
+          )
+          if [ -n "$LABEL" ]; then args+=(--label "$LABEL"); fi
+          if [ -f facts.json ]; then args+=(--facts facts.json); fi
+          if [ -n "$BASELINE" ]; then args+=(--baseline "$BASELINE"); fi
+          if [ -f repo/.pepperdash/form-metadata.json ]; then args+=(--form-sidecar repo/.pepperdash/form-metadata.json); fi
+          status=0
+          node "$TOOLS/release-metadata/assemble.mjs" "${args[@]}" || status=$?
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: Keep the document
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pepperdash-metadata
+          path: pepperdash-metadata.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Attach to the release
+        run: gh release upload "$TAG" pepperdash-metadata.json --clobber -R "$GITHUB_REPOSITORY"
+
+      - name: Register with Portal
+        run: |
+          if [ -z "$UDM_URLS" ]; then
+            echo "::notice::PEPPERDASH_UDM_URLS is not set; the release was not registered with Portal"
+            exit 0
+          fi
+          node "$TOOLS/release-metadata/register.mjs" --urls "$UDM_URLS" \
+            --document pepperdash-metadata.json --assets-dir assets --summary "$GITHUB_STEP_SUMMARY"
+
+  withdraw:
+    needs: tools
+    if: inputs.mode == 'withdraw'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      UDM_URLS: ${{ vars.PEPPERDASH_UDM_URLS }}
+    steps:
+      - name: Checkout workflow-templates
+        uses: actions/checkout@v6
+        with:
+          repository: PepperDash/workflow-templates
+          ref: ${{ needs.tools.outputs.sha }}
+          path: templates
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Withdraw from Portal
+        run: |
+          if [ -z "$UDM_URLS" ]; then
+            echo "::notice::PEPPERDASH_UDM_URLS is not set; nothing to withdraw"
+            exit 0
+          fi
+          node "$TOOLS/release-metadata/register.mjs" --urls "$UDM_URLS" --withdraw \
+            --repo-url "https://github.com/$GITHUB_REPOSITORY" --version "${TAG#v}" --summary "$GITHUB_STEP_SUMMARY"
