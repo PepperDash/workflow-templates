@@ -34,7 +34,8 @@ def newest_versions():
             docs = [json.load(open(f)) for f in glob.glob(os.path.join(EXPORT, owner, repo, '*.json'))]
             # The mocks list versions oldest first; the export doesn't keep order, so sort semver-ish
             def key(d):
-                core, _, pre = d['version'].partition('-')
+                # Build metadata (+build.5) doesn't affect precedence
+                core, _, pre = d['version'].split('+')[0].partition('-')
                 ids = [(0, int(x), '') if x.isdigit() else (1, 0, x) for x in pre.split('.')] if pre else []
                 return ([int(x) for x in core.split('.')], 0 if pre else 1, ids)
             docs.sort(key=key)
@@ -54,9 +55,14 @@ for full, (version, package_id) in newest_versions().items():
         continue
     owner, repo = full.split('/')
     record = runs[full] = {'version': version, 'packageId': package_id}
+    # An earlier run's facts must not stand in for this attempt if it fails
+    facts_path = os.path.join(WORK, 'facts', f'{owner}__{repo}.json')
+    if os.path.exists(facts_path):
+        os.remove(facts_path)
     if full in TAG_OVERRIDE:
         record['comparedAgainstTag'] = TAG_OVERRIDE[full]
-    repo_dir = os.path.join(WORK, 'repos', f'{owner}__{repo}@{version}')
+    # Keyed by what's checked out, so changing a tagOverride clones the new tag
+    repo_dir = os.path.join(WORK, 'repos', f'{owner}__{repo}@{TAG_OVERRIDE.get(full, version)}')
     if not os.path.isdir(repo_dir):
         for tag in ([TAG_OVERRIDE[full]] if full in TAG_OVERRIDE else [f'v{version}', version]):
             code, out = run(['gh', 'repo', 'clone', full, repo_dir, '--', '-q', '--depth', '1', '--branch', tag])
@@ -69,7 +75,7 @@ for full, (version, package_id) in newest_versions().items():
             print(f'{full}@{version}: no tag')
             continue
 
-    built = build_and_extract(repo_dir, os.path.join(WORK, 'facts', f'{owner}__{repo}.json'))
+    built = build_and_extract(repo_dir, facts_path)
     record.update({k: v for k, v in built.items() if k != 'packageId'})
     print(f"{full}@{version}: {record['status']} ({len(record['assemblies'])} assemblies{', build errors' if 'buildErrors' in record else ''})")
 

@@ -128,24 +128,38 @@ public sealed class AssemblyInspector : IDisposable
 
     private Dictionary<(string, string), string?>? _constants;
 
+    /// <summary>
+    /// The plugin and what it references, transitively (Plugin -> BaseLibrary -> Contracts). The
+    /// framework's own references aren't followed: they add nothing a plugin config names.
+    /// </summary>
     private IEnumerable<Assembly> WithReferences()
     {
-        yield return Assembly;
-        foreach (var reference in Assembly.GetReferencedAssemblies())
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Assembly.GetName().Name ?? "" };
+        var pending = new Queue<Assembly>([Assembly]);
+        while (pending.TryDequeue(out var assembly))
         {
-            Assembly? loaded;
-            try
-            {
-                loaded = _context.LoadFromAssemblyName(reference);
-            }
-            catch (FileNotFoundException)
-            {
-                // Not resolvable here; what it defines just isn't available
+            yield return assembly;
+            if (IsFramework(assembly.GetName().Name))
                 continue;
+            foreach (var reference in assembly.GetReferencedAssemblies())
+            {
+                if (reference.Name is null || !seen.Add(reference.Name))
+                    continue;
+                try
+                {
+                    pending.Enqueue(_context.LoadFromAssemblyName(reference));
+                }
+                catch (FileNotFoundException)
+                {
+                    // Not resolvable here; what it defines just isn't available
+                }
             }
-            yield return loaded;
         }
     }
+
+    private static bool IsFramework(string? name) =>
+        name is null or "mscorlib" or "netstandard" ||
+        name.StartsWith("System", StringComparison.Ordinal) || name.StartsWith("Microsoft", StringComparison.Ordinal);
 
     private static Type[] TypesOf(Assembly assembly)
     {
@@ -179,14 +193,20 @@ public sealed class AssemblyInspector : IDisposable
     /// </summary>
     private static IEnumerable<string> ProjectAssetsAssemblies(string assetsJsonPath)
     {
-        var nugetDir = Environment.GetEnvironmentVariable("NUGET_PACKAGES");
-        if (string.IsNullOrWhiteSpace(nugetDir))
-            nugetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
-
         using var stream = File.OpenRead(assetsJsonPath);
         using var doc = JsonDocument.Parse(stream);
         if (!doc.RootElement.TryGetProperty("targets", out var targets))
             yield break;
+
+        // The folders the restore used (RestorePackagesPath, globalPackagesFolder, fallback folders),
+        // then the default global packages folder
+        var folders = new List<string>();
+        if (doc.RootElement.TryGetProperty("packageFolders", out var packageFolders))
+            folders.AddRange(packageFolders.EnumerateObject().Select(f => f.Name));
+        var nugetDir = Environment.GetEnvironmentVariable("NUGET_PACKAGES");
+        if (string.IsNullOrWhiteSpace(nugetDir))
+            nugetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
+        folders.Add(nugetDir);
 
         foreach (var target in targets.EnumerateObject())
         {
@@ -197,7 +217,10 @@ public sealed class AssemblyInspector : IDisposable
                     continue;
                 var packageId = lib.Name[..slash].ToLowerInvariant();
                 var version = lib.Name[(slash + 1)..];
-                var packageDir = Path.Combine(nugetDir, packageId, version);
+                // The first folder that has the package, as NuGet resolves it
+                var packageDir = folders.Select(f => Path.Combine(f, packageId, version)).FirstOrDefault(Directory.Exists);
+                if (packageDir is null)
+                    continue;
                 foreach (var kind in new[] { "compile", "runtime" })
                 {
                     if (!lib.Value.TryGetProperty(kind, out var assets))
@@ -206,15 +229,14 @@ public sealed class AssemblyInspector : IDisposable
                     {
                         if (!asset.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
                             continue;
-                        var path = Path.Combine(nugetDir, packageId, version, asset.Name.Replace('/', Path.DirectorySeparatorChar));
+                        var path = Path.Combine(packageDir, asset.Name.Replace('/', Path.DirectorySeparatorChar));
                         if (File.Exists(path))
                             yield return path;
                     }
                 }
                 // Some packages (the Crestron SDK) ship assemblies outside the folders NuGet lists
-                if (Directory.Exists(packageDir))
-                    foreach (var path in Directory.EnumerateFiles(packageDir, "*.dll", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
-                        yield return path;
+                foreach (var path in Directory.EnumerateFiles(packageDir, "*.dll", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+                    yield return path;
             }
         }
     }

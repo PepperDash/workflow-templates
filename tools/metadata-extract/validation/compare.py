@@ -58,11 +58,23 @@ for full, run in sorted(runs.items()):
     owner, repo = full.split('/')
     mock = json.load(open(os.path.join(EXPORT, owner, repo, f"{run['version']}.json")))
     facts_path = os.path.join(WORK, 'facts', f'{owner}__{repo}.json')
-    facts = json.load(open(facts_path)) if os.path.exists(facts_path) else None
+    # Facts files aren't versioned: one left by an earlier run belongs to another attempt
+    ran = run.get('status') in ('ok', 'source-only') and os.path.exists(facts_path)
+    facts = json.load(open(facts_path)) if ran else None
+    # Denominators come from every mock typeName, whether or not it was extracted or matched
+    mock_tns = mock['typeNames'].values()
     entry = results[full] = {'version': run['version'], 'status': run.get('status'),
-                             'buildErrors': run.get('buildErrors'), 'typeNames': {}}
+                             'buildErrors': run.get('buildErrors'), 'typeNames': {},
+                             'mock': {'typeNames': len(mock['typeNames']),
+                                      'interfaces': sum(len(m.get('interfaces') or []) for m in mock_tns),
+                                      'schemaProperties': sum(len(flatten(config_def(m.get('schema')))) for m in mock_tns),
+                                      'ports': sum(len((m.get('routingPorts') or {}).get(s) or [])
+                                                   for m in mock_tns for s in ('inputs', 'outputs'))},
+                             'interfacesAvailable': False, 'schemasAvailable': False}
     if not facts:
         continue
+    entry['interfacesAvailable'] = any(t.get('interfaces') is not None for t in facts['typeNames'].values())
+    entry['schemasAvailable'] = any(t.get('schema') is not None for t in facts['typeNames'].values())
     defined = set(facts.get('definedInterfaces') or [])
     mock_types, real_types = set(mock['typeNames']), set(facts['typeNames'])
     # Essentials looks types up case-insensitively
@@ -145,22 +157,24 @@ lines = ['# Extracted metadata vs mock metadata', '']
 statuses = Counter(r['status'] for r in results.values())
 lines.append('Runs: ' + ', '.join(f'{v} {k}' for k, v in sorted(statuses.items())))
 lines.append('')
-lines.append('| Package | Version | Status | typeNames mock/matched | Interfaces matched / mock | Schema props matched / mock | Ports matched / mock (unresolved) |')
+lines.append('Denominators count every mock typeName. n/a: the run produced no interfaces or schemas to compare '
+             '(no facts, or source only), so those count as unmatched in the totals.')
+lines.append('')
+lines.append('| Package | Version | Status | typeNames matched / mock | Interfaces matched / mock | Schema props matched / mock | Ports matched / mock (unresolved) |')
 lines.append('|---|---|---|---|---|---|---|')
 totals = Counter()
 for full, r in results.items():
-    tn = r['typeNames']
+    tn, mock = r['typeNames'], r['mock']
     ifm = sum(len(t.get('interfaces', {}).get('matched', [])) for t in tn.values())
-    ifmock = sum(len(t.get('interfaces', {}).get('matched', [])) + len(t.get('interfaces', {}).get('mockOnly', {})) for t in tn.values())
     sm = sum(t.get('schema', {}).get('matched', 0) for t in tn.values())
-    smock = sum(t.get('schema', {}).get('mockProperties', 0) for t in tn.values())
     pm = sum(t['routingPorts'][s]['matched'] for t in tn.values() for s in ('inputs', 'outputs'))
-    pmock = sum(t['routingPorts'][s]['mock'] for t in tn.values() for s in ('inputs', 'outputs'))
     pun = sum(t['routingPorts']['unresolved'] for t in tn.values())
-    mock_count = len(tn) + len(r.get('mockOnlyTypeNames') or [])
-    totals.update(ifm=ifm, ifmock=ifmock, sm=sm, smock=smock, pm=pm, pmock=pmock, tn=len(tn), tnmock=mock_count)
-    lines.append(f"| {full} | {r['version']} | {r['status']} | {mock_count}/{len(tn)} | {ifm}/{ifmock} | {sm}/{smock} | {pm}/{pmock} ({pun}) |")
-lines.append(f"| **Total** | | | {totals['tnmock']}/{totals['tn']} | {totals['ifm']}/{totals['ifmock']} | {totals['sm']}/{totals['smock']} | {totals['pm']}/{totals['pmock']} |")
+    totals.update(tn=len(tn), tnmock=mock['typeNames'], ifm=ifm, ifmock=mock['interfaces'],
+                  sm=sm, smock=mock['schemaProperties'], pm=pm, pmock=mock['ports'])
+    ifs = f"{ifm}/{mock['interfaces']}" if r['interfacesAvailable'] else f"n/a ({mock['interfaces']})"
+    schema = f"{sm}/{mock['schemaProperties']}" if r['schemasAvailable'] else f"n/a ({mock['schemaProperties']})"
+    lines.append(f"| {full} | {r['version']} | {r['status']} | {len(tn)}/{mock['typeNames']} | {ifs} | {schema} | {pm}/{mock['ports']} ({pun}) |")
+lines.append(f"| **Total** | | | {totals['tn']}/{totals['tnmock']} | {totals['ifm']}/{totals['ifmock']} | {totals['sm']}/{totals['smock']} | {totals['pm']}/{totals['pmock']} |")
 lines.append('')
 lines.append('## Mock-only interfaces')
 for bucket, names in sorted(interface_buckets.items()):

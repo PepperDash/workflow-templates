@@ -35,7 +35,10 @@ source.Scan();
 
 var portsByClass = new Dictionary<string, RoutingPortFacts>(StringComparer.Ordinal);
 var schemas = new SchemaBuilder(source, facts.Warnings);
-var versions = source.Factories.Select(f => f.MinimumEssentialsVersion).OfType<string>().Distinct().ToList();
+// The package needs the highest any of its factories asks for
+var versions = source.Factories.Select(f => f.MinimumEssentialsVersion).OfType<string>().Distinct()
+    .OrderByDescending(v => Version.TryParse(v.Split('-', '+')[0], out var parsed) ? parsed : new Version())
+    .ToList();
 facts.MinimumEssentialsVersion = versions.FirstOrDefault();
 if (versions.Count > 1)
     facts.Warnings.Add($"factories set different minimum Essentials versions: {string.Join(", ", versions)}");
@@ -49,25 +52,25 @@ foreach (var factory in source.Factories)
     if (inspectors.Count > 0 && device.type is null)
         facts.Warnings.Add($"{factory.Name}: device class {factory.DeviceClass} not found in the assembly");
 
+    // Names found in source are kept without --assembly; only the schema needs the reflected type
     var configClass = factory.ConfigClass;
     var configSource = factory.ConfigClassSource;
-    var configType = configClass is not null ? device.inspector?.FindType(configClass) : null;
-    if (configType is null && device.type is not null)
+    var configType = configClass is not null ? FindType(configClass, device.inspector) : null;
+    if (configType is null && source.ConfigFromDeviceConstructor(factory.DeviceClass) is { } deserialized)
+    {
+        var deserializedType = FindType(deserialized, device.inspector);
+        if (deserializedType is not null || configClass is null)
+            (configClass, configSource, configType) = (deserialized, "device-constructor", deserializedType);
+    }
+    // Only a guess (a plugin class the constructor takes can be a service), so only when the source
+    // names no config
+    if (configClass is null && device.type is not null)
     {
         configType = device.inspector!.ConfigFromConstructor(device.type);
         if (configType is not null)
         {
             configClass = configType.Name;
             configSource = "constructor-parameter";
-        }
-    }
-    if (configType is null && source.ConfigFromDeviceConstructor(factory.DeviceClass) is { } deserialized)
-    {
-        configType = device.inspector?.FindType(deserialized);
-        if (configType is not null)
-        {
-            configClass = deserialized;
-            configSource = "device-constructor";
         }
     }
 
@@ -89,14 +92,21 @@ foreach (var factory in source.Factories)
             built = device;
         }
 
-        // BuildDevice names the config for every typeName; otherwise it came from the factory's
-        // device class, and a more specific branch class may deserialize its own
+        // This typeName's own BuildDevice branch deserializing its config beats one found elsewhere in
+        // BuildDevice. Otherwise, when BuildDevice names no config, a more specific branch class may
+        // deserialize its own
         var (typeConfigClass, typeConfigSource, typeConfigType) = (configClass, configSource, configType);
-        if (deviceClass != factory.DeviceClass && configSource is not ("deserialize-call" or "helper-call") &&
-            source.ConfigFromDeviceConstructor(deviceClass) is { } own &&
-            built.inspector?.FindType(own) is { } ownType)
+        if (factory.BranchConfigClasses.GetValueOrDefault(typeName) is { } branchConfig)
         {
-            (typeConfigClass, typeConfigSource, typeConfigType) = (own, "device-constructor", ownType);
+            (typeConfigClass, typeConfigSource, typeConfigType) =
+                (branchConfig, "build-device-branch", FindType(branchConfig, built.inspector));
+        }
+        else if (deviceClass != factory.DeviceClass && configSource is not ("deserialize-call" or "helper-call") &&
+            source.ConfigFromDeviceConstructor(deviceClass) is { } own)
+        {
+            var ownType = FindType(own, built.inspector);
+            if (ownType is not null || inspectors.Count == 0)
+                (typeConfigClass, typeConfigSource, typeConfigType) = (own, "device-constructor", ownType);
         }
 
         var entry = new TypeNameFacts
@@ -147,6 +157,11 @@ return 0;
 (AssemblyInspector? inspector, Type? type) FindDevice(string className) =>
     inspectors.Select(i => (inspector: (AssemblyInspector?)i, type: i.FindType(className)))
         .FirstOrDefault(x => x.type is not null);
+
+// A config class can live in a different assembly from its device: look in the device's first
+Type? FindType(string className, AssemblyInspector? preferred) =>
+    preferred?.FindType(className)
+    ?? inspectors.Where(i => i != preferred).Select(i => i.FindType(className)).FirstOrDefault(t => t is not null);
 
 RoutingPortFacts PortsOf(string className)
 {

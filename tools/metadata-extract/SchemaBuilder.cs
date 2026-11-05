@@ -192,7 +192,9 @@ public sealed class SchemaBuilder
                 ordered[k] = v;
             }
 
-            var value = DefaultFor(declaring, property.Name, propertyType, ordered);
+            var value = DefaultFor(type, property, propertyType, ordered);
+            // The nested schema's own default was copied above; it stands only if DefaultFor kept it
+            ordered.Remove("default");
             if (value is not null)
             {
                 ordered["default"] = value.DeepClone();
@@ -219,19 +221,63 @@ public sealed class SchemaBuilder
         return result;
     }
 
-    /// <summary>A literal default from source, or the default an object property's own schema carries</summary>
-    private JsonNode? DefaultFor(string declaring, string property, Type type, JsonObject schema)
+    /// <summary>
+    /// A literal default from source, or the default an object property's own schema carries. A
+    /// derived config's constructor runs after its base's initializers, so the source is searched
+    /// from <paramref name="owner"/> up to the member's declaring class.
+    /// </summary>
+    private JsonNode? DefaultFor(Type owner, MemberInfo member, Type type, JsonObject schema)
     {
-        if (_source.Defaults.TryGetValue($"{declaring}.{property}", out var found))
+        var found = ClassChain(owner, member.DeclaringType)
+            .Select(c => _source.Defaults.GetValueOrDefault($"{c}.{member.Name}"))
+            .FirstOrDefault(d => d is not null);
+        if (ReferenceEquals(found, DefaultValue.Unknown))
+            return null;
+        if (found is not null)
         {
+            if (schema["enum"] is JsonArray names)
+            {
+                // Configs use member names; a numeric initializer (Mode = 0) is the member with that value
+                var enumName = found.EnumMember ?? EnumName(type, found.Value);
+                return enumName is not null && names.Any(n => n?.GetValue<string>() == enumName)
+                    ? JsonValue.Create(enumName) : null;
+            }
             // The scanner's node is shared by every schema that uses this class; hand out copies
             if (found.Value is not null)
                 return found.Value.DeepClone();
-            if (found.EnumMember is not null && schema["enum"] is JsonArray names &&
-                names.Any(n => n?.GetValue<string>() == found.EnumMember))
-                return JsonValue.Create(found.EnumMember);
         }
         return schema["default"] is JsonObject nested && type.IsClass ? nested.DeepClone() : null;
+    }
+
+    /// <summary>Class names from <paramref name="type"/> up to and including <paramref name="declaring"/></summary>
+    private static IEnumerable<string> ClassChain(Type type, Type? declaring)
+    {
+        for (Type? t = type; t is not null; t = Safe(() => t.BaseType))
+        {
+            yield return t.Name;
+            if (declaring is null || t == declaring)
+                yield break;
+        }
+    }
+
+    private static string? EnumName(Type type, JsonNode? value)
+    {
+        if (type.IsGenericType && type.GetGenericTypeDefinition().FullName == "System.Nullable`1")
+            type = type.GetGenericArguments()[0];
+        if (!type.IsEnum || value is not JsonValue number || !number.TryGetValue<decimal>(out var n))
+            return null;
+        foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Static))
+        {
+            try
+            {
+                if (Convert.ToDecimal(field.GetRawConstantValue(), System.Globalization.CultureInfo.InvariantCulture) == n)
+                    return field.Name;
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -266,8 +312,10 @@ public sealed class SchemaBuilder
                 _warnings.Add($"{type.Name}.{member.Name}: left out of the schema, missing reference: {e.Message}");
             }
         }
+        // Newtonsoft also sets a non-public setter when the property is marked [JsonProperty]
         foreach (var p in properties.Where(p => p.GetIndexParameters().Length == 0))
-            Add(p, () => p.PropertyType, t => p.SetMethod?.IsPublic == true || IsCollection(t));
+            Add(p, () => p.PropertyType, t => p.SetMethod?.IsPublic == true || IsCollection(t) ||
+                (p.SetMethod is not null && Attributes(p).Any(a => a.AttributeType.FullName == JsonProperty)));
         foreach (var f in fields.Where(f => !f.IsInitOnly))
             Add(f, () => f.FieldType, _ => true);
         return members;
