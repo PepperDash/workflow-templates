@@ -131,6 +131,11 @@ export function resolveSchemaIds(formMetadata, schema) {
   const rewrites = [];
   const resolved = {};
   for (const [name, meta] of Object.entries(properties)) {
+    // Not a string: the sidecar's schema check reports it
+    if (typeof meta?.schemaId !== 'string') {
+      resolved[name] = meta;
+      continue;
+    }
     const actual = ids.has(meta.schemaId)
       ? meta.schemaId
       : exact.get(idPath(meta.schemaId)) ?? loose.get(idPath(meta.schemaId, { loose: true }));
@@ -266,7 +271,8 @@ function describeErrors(errors) {
 /** The checks that must pass before anything is published. Errors fail the build. */
 export function gate({ doc, facts, formSidecar }) {
   const errors = [];
-  const warnings = [];
+  // What the extractor couldn't read (a property left out for a missing reference, say)
+  const warnings = (facts.warnings ?? []).map((w) => `metadata-extract: ${w}`);
 
   if (!validateMetadata(doc)) {
     errors.push(...describeErrors(validateMetadata.errors).map((e) => `pepperdash-metadata.json: ${e}`));
@@ -299,7 +305,7 @@ export function gate({ doc, facts, formSidecar }) {
     const properties = entry.formMetadata?.propertyMetadata?.properties ?? {};
     const ids = schemaIds(entry.schema);
     for (const [property, meta] of Object.entries(properties)) {
-      if (!ids.has(meta.schemaId)) {
+      if (!ids.has(meta?.schemaId)) {
         errors.push(`${typeName}: formMetadata ${property} points at ${meta.schemaId}, which isn't in this release's schema`);
       }
     }

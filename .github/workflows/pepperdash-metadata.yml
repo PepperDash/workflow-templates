@@ -92,7 +92,8 @@ jobs:
       - name: Checkout the release
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag }}
+          # A branch of the same name would win over an unqualified ref
+          ref: refs/tags/${{ inputs.tag }}
           path: repo
 
       - name: Checkout workflow-templates
@@ -138,7 +139,7 @@ jobs:
       - name: Checkout the repo (history and sidecars only; nothing is built here)
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
           path: repo
 
@@ -184,18 +185,24 @@ jobs:
         env:
           PUBLISHED_AT: ${{ steps.release.outputs.published-at }}
         run: |
-          tags=$(gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,publishedAt,createdAt,isDraft \
-            | jq -r --arg at "$PUBLISHED_AT" '[.[] | select(.isDraft | not) | {tagName, at: (.publishedAt // .createdAt)}
-                | select(.at < $at)] | sort_by(.at) | reverse | .[].tagName')
+          # Every release, not just the newest 100, before filtering by date
+          tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft | not) | {tag: .tag_name, at: (.published_at // .created_at)}' \
+            | jq -rs --arg at "$PUBLISHED_AT" 'map(select(.at < $at)) | sort_by(.at) | reverse | .[].tag')
           for tag in $tags; do
             [ "$tag" = "$TAG" ] && continue
             sha=$(git -C repo rev-list -n 1 "$tag" 2>/dev/null) || continue
             git -C repo merge-base --is-ancestor "$sha" "$TAG" || continue
-            if gh release download "$tag" -R "$GITHUB_REPOSITORY" -p pepperdash-metadata.json -D baseline 2>/dev/null; then
+            gh release download "$tag" -R "$GITHUB_REPOSITORY" -p pepperdash-metadata.json -D baseline 2>/dev/null || continue
+            # The document's own commit, in case the tag was moved after it was generated
+            doc_sha=$(jq -r '.commitSha // empty' baseline/pepperdash-metadata.json)
+            if [ -n "$doc_sha" ] && git -C repo merge-base --is-ancestor "$doc_sha" "$TAG" 2>/dev/null; then
               echo "Baseline: $tag"
               echo "file=baseline/pepperdash-metadata.json" >> "$GITHUB_OUTPUT"
               break
             fi
+            echo "Skipping $tag: its metadata's commit ${doc_sha:-(none)} isn't an ancestor of $TAG"
+            rm -f baseline/pepperdash-metadata.json
           done
 
       - name: Assemble and check pepperdash-metadata.json

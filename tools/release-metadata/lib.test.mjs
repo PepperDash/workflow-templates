@@ -129,6 +129,13 @@ describe('resolveSchemaIds', () => {
     assert.equal(resolved('#root/propertiesConfig/partitions/deviceKey'), '#root/partitions/items/deviceKey');
   });
 
+  it('leaves a missing or non-string schemaId for the gate instead of throwing', () => {
+    const formMetadata = { propertyMetadata: { properties: { a: { formElement: 'TextInput' }, b: { schemaId: 7 } } } };
+    const { formMetadata: out, rewrites } = resolveSchemaIds(formMetadata, schema);
+    assert.deepEqual(out.propertyMetadata.properties, formMetadata.propertyMetadata.properties);
+    assert.deepEqual(rewrites, []);
+  });
+
   it('leaves a schemaId that matches nothing for the gate', () => {
     assert.equal(resolved('#root/propertiesConfig/missing'), '#root/propertiesConfig/missing');
     assert.deepEqual(resolveSchemaIds(form('#root/roomKeys'), schema).rewrites, []);
@@ -186,6 +193,14 @@ describe('assemble and gate', () => {
     const unknown = { ...extracted, minimumEssentialsVersion: null };
     assert.equal(assemble({ facts: unknown, baseline, formSidecar: null, release }).doc.minimumEssentialsVersion, '2.0.0');
     assert.equal(assemble({ facts: extracted, baseline, formSidecar: null, release }).doc.minimumEssentialsVersion, '3.0.0');
+  });
+
+  it("passes the extractor's warnings on as gate warnings", () => {
+    const warned = { ...extracted, warnings: ['TestConfig.Port: left out of the schema, missing reference: Crestron'] };
+    const { doc } = assemble({ facts: warned, baseline: null, formSidecar: null, release });
+    const { errors, warnings } = gate({ doc, facts: warned, formSidecar: null });
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, ['metadata-extract: TestConfig.Port: left out of the schema, missing reference: Crestron']);
   });
 
   it('gives UI kinds no typeNames', () => {
