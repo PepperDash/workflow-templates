@@ -137,20 +137,33 @@ describe('mergeSchemaText', () => {
     assert.equal(code.$defs.propertiesConfig.properties.port.description, undefined);
   });
 
-  it('walks nested objects and array items', () => {
+  it('walks nested objects, array items and dictionary values, to any depth', () => {
+    const element = (description) => ({ type: 'object', properties: { name: { type: 'string', ...description } } });
     const nested = (description) => ({
       $defs: { propertiesConfig: { properties: {
         monitor: { type: 'object', properties: { timeout: { type: 'integer', ...description } } },
-        inputs: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', ...description } } } },
+        inputs: { type: 'array', items: element(description) },
+        // List<List<T>>, Dictionary<string, T> and Dictionary<string, T[]>
+        grid: { type: 'array', items: { type: 'array', items: element(description) } },
+        byKey: { type: 'object', additionalProperties: element(description) },
+        listsByKey: { type: 'object', additionalProperties: { type: 'array', items: element(description) } },
       } } },
     });
     const { schema, descriptions } = mergeSchemaText(nested({}), nested({ description: 'Old' }));
     const properties = schema.$defs.propertiesConfig.properties;
     assert.equal(properties.monitor.properties.timeout.description, 'Old');
     assert.equal(properties.inputs.items.properties.name.description, 'Old');
-    assert.deepEqual(descriptions.missing, ['monitor', 'inputs']);
+    assert.equal(properties.grid.items.items.properties.name.description, 'Old');
+    assert.equal(properties.byKey.additionalProperties.properties.name.description, 'Old');
+    assert.equal(properties.listsByKey.additionalProperties.items.properties.name.description, 'Old');
+    assert.deepEqual(descriptions.missing, ['monitor', 'inputs', 'grid', 'byKey', 'listsByKey']);
 
-    assert.deepEqual(mergeSchemaText(nested({}), undefined).descriptions.missing, ['monitor', 'monitor.timeout', 'inputs', 'inputs[].name']);
+    assert.deepEqual(mergeSchemaText(nested({}), undefined).descriptions.missing, [
+      'monitor', 'monitor.timeout', 'inputs', 'inputs[].name', 'grid', 'grid[][].name',
+      'byKey', 'byKey{}.name', 'listsByKey', 'listsByKey{}[].name',
+    ]);
+    // additionalProperties: true isn't a schema to walk
+    assert.doesNotThrow(() => mergeSchemaText({ $defs: { propertiesConfig: { properties: { x: { type: 'object', additionalProperties: true } } } } }));
   });
 
   it('lists what has no description in the job summary', () => {

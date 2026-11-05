@@ -160,7 +160,14 @@ const caseInsensitive = (object, key) =>
 export function mergeSchemaText(schema, baselineSchema) {
   const merged = structuredClone(schema);
   const descriptions = { code: 0, baseline: 0, missing: [] };
+  const isSchema = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  // A schema's own properties, then those of the element schemas it contains, to any depth: arrays
+  // (items, path "x[]") and dictionaries (additionalProperties, path "x{}") can nest each other
   const walk = (node, base, path) => {
+    if (isSchema(node?.items)) walk(node.items, base?.items, `${path}[]`);
+    if (isSchema(node?.additionalProperties)) {
+      walk(node.additionalProperties, isSchema(base?.additionalProperties) ? base.additionalProperties : undefined, `${path}{}`);
+    }
     for (const [name, property] of Object.entries(node?.properties ?? {})) {
       if (!property || typeof property !== 'object') continue;
       const baseProperty = caseInsensitive(base?.properties, name);
@@ -175,9 +182,6 @@ export function mergeSchemaText(schema, baselineSchema) {
         descriptions.missing.push(propertyPath);
       }
       walk(property, baseProperty, propertyPath);
-      if (property.items && typeof property.items === 'object') {
-        walk(property.items, baseProperty?.items, `${propertyPath}[]`);
-      }
     }
   };
   walk(merged.$defs?.propertiesConfig, baselineSchema?.$defs?.propertiesConfig, '');
