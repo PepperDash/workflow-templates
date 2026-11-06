@@ -17,6 +17,9 @@ if (!options.TryGetValue("source", out var sourceDirs) || sourceDirs.Count != 1)
 
 var facts = new Facts();
 var assemblies = options.GetValueOrDefault("assembly") ?? [];
+var assetsJson = assemblies.ToDictionary(
+    path => path,
+    path => options.GetValueOrDefault("assets")?.FirstOrDefault() ?? FindAssetsJson(path));
 var inspectors = assemblies
     .Select(path => new AssemblyInspector(
         path,
@@ -24,8 +27,17 @@ var inspectors = assemblies
         (options.GetValueOrDefault("reference-dir") ?? [])
             .Concat(assemblies.Select(a => Path.GetDirectoryName(Path.GetFullPath(a))!))
             .Distinct(),
-        options.GetValueOrDefault("assets")?.FirstOrDefault() ?? FindAssetsJson(path)))
+        assetsJson[path]))
     .ToList();
+
+// The Essentials package the restore resolved the csproj's reference to
+var dependencies = assetsJson.Values.OfType<string>().Distinct()
+    .Select(AssemblyInspector.EssentialsPackageVersion).OfType<string>().Distinct()
+    .OrderByDescending(v => Version.TryParse(v.Split('-', '+')[0], out var parsed) ? parsed : new Version())
+    .ToList();
+facts.EssentialsDependencyVersion = dependencies.FirstOrDefault();
+if (dependencies.Count > 1)
+    facts.Warnings.Add($"projects depend on different Essentials versions: {string.Join(", ", dependencies)}");
 
 var source = new SourceScanner(sourceDirs[0])
 {

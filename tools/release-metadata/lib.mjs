@@ -290,6 +290,10 @@ export function assemble({ facts, baseline, formSidecar, release }) {
   if (release.kind === 'plugin' && minimum) {
     doc.minimumEssentialsVersion = minimum;
   }
+  // Only from this build's restore: the csproj can change it between releases
+  if (release.kind === 'plugin' && facts?.essentialsDependencyVersion) {
+    doc.essentialsDependencyVersion = facts.essentialsDependencyVersion;
+  }
 
   const report = {};
   if (!NO_DEVICE_KINDS.includes(release.kind)) {

@@ -10,6 +10,8 @@ public sealed class Facts
 {
     public string Tool { get; init; } = $"metadata-extract@{typeof(Facts).Assembly.GetName().Version?.ToString(3)}";
     public string? MinimumEssentialsVersion { get; set; }
+    /// <summary>The PepperDashEssentials version the build restored; null without --assembly or a restore</summary>
+    public string? EssentialsDependencyVersion { get; set; }
     public SortedDictionary<string, TypeNameFacts> TypeNames { get; } = new(StringComparer.Ordinal);
     /// <summary>Every public interface defined in the inspected assemblies and their references</summary>
     public SortedSet<string> DefinedInterfaces { get; } = new(StringComparer.Ordinal);

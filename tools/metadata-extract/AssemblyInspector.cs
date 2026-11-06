@@ -191,6 +191,26 @@ public sealed class AssemblyInspector : IDisposable
     public void Dispose() => _context.Dispose();
 
     /// <summary>
+    /// The PepperDashEssentials version in a restore's project.assets.json: what the csproj's
+    /// reference resolved to, whether it names an exact version, a range or a central package version.
+    /// </summary>
+    public static string? EssentialsPackageVersion(string assetsJsonPath)
+    {
+        if (!File.Exists(assetsJsonPath))
+            return null;
+        using var stream = File.OpenRead(assetsJsonPath);
+        using var doc = JsonDocument.Parse(stream);
+        if (!doc.RootElement.TryGetProperty("libraries", out var libraries) || libraries.ValueKind != JsonValueKind.Object)
+            return null;
+        // Keys are "<id>/<version>"; package ids match without regard to case
+        return libraries.EnumerateObject()
+            .Select(lib => lib.Name.Split('/', 2))
+            .Where(parts => parts.Length == 2 && parts[0].Equals("PepperDashEssentials", StringComparison.OrdinalIgnoreCase))
+            .Select(parts => parts[1])
+            .FirstOrDefault();
+    }
+
+    /// <summary>
     /// The plugin's deps.json omits Essentials and its dependencies (they're ExcludeAssets=runtime),
     /// so resolve them from the restore's project.assets.json and the NuGet package folder.
     /// </summary>

@@ -97,6 +97,9 @@
     "minimumEssentialsVersion": {
       "$ref": "#/definitions/semver"
     },
+    "essentialsDependencyVersion": {
+      "$ref": "#/definitions/semver"
+    },
     "assets": {
       "type": "array",
       "items": {

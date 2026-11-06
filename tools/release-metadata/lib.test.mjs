@@ -224,13 +224,18 @@ describe('resolveSchemaIds', () => {
 });
 
 describe('assemble and gate', () => {
-  const extracted = { minimumEssentialsVersion: '3.0.0', typeNames: { testDevice: facts() } };
+  const extracted = {
+    minimumEssentialsVersion: '3.0.0',
+    essentialsDependencyVersion: '3.0.1-beta.2',
+    typeNames: { testDevice: facts() },
+  };
 
   it('produces a document that passes the gate', () => {
     const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, release });
     assert.equal(doc.version, '1.2.0-beta.1');
     assert.equal(doc.prerelease, true);
     assert.equal(doc.minimumEssentialsVersion, '3.0.0');
+    assert.equal(doc.essentialsDependencyVersion, '3.0.1-beta.2');
     assert.deepEqual(gate({ doc, facts: extracted, formSidecar: null }), { errors: [], warnings: [] });
   });
 
@@ -270,6 +275,12 @@ describe('assemble and gate', () => {
     assert.equal(assemble({ facts: extracted, baseline, formSidecar: null, release }).doc.minimumEssentialsVersion, '3.0.0');
   });
 
+  it("never takes the Essentials dependency from the baseline", () => {
+    const baseline = { essentialsDependencyVersion: '2.0.0', typeNames: {} };
+    const unknown = { ...extracted, essentialsDependencyVersion: null };
+    assert.equal(assemble({ facts: unknown, baseline, formSidecar: null, release }).doc.essentialsDependencyVersion, undefined);
+  });
+
   it("passes the extractor's warnings on as gate warnings", () => {
     const warned = { ...extracted, warnings: ['TestConfig.Port: left out of the schema, missing reference: Crestron'] };
     const { doc } = assemble({ facts: warned, baseline: null, formSidecar: null, release });
@@ -282,6 +293,7 @@ describe('assemble and gate', () => {
     const { doc } = assemble({ facts: null, baseline: null, formSidecar: null, release: { ...release, kind: 'userInterface' } });
     assert.deepEqual(doc.typeNames, {});
     assert.equal(doc.minimumEssentialsVersion, undefined);
+    assert.equal(doc.essentialsDependencyVersion, undefined);
     assert.deepEqual(gate({ doc, facts: { typeNames: {} }, formSidecar: null }).errors, []);
   });
 });
