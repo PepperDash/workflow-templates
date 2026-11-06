@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NuGet.Versioning;
 using PepperDash.MetadataExtract;
 
 // metadata-extract --source <repo> [--assembly <plugin.dll>]... [--reference-dir <dir>]...
@@ -17,6 +18,9 @@ if (!options.TryGetValue("source", out var sourceDirs) || sourceDirs.Count != 1)
 
 var facts = new Facts();
 var assemblies = options.GetValueOrDefault("assembly") ?? [];
+var assetsJson = assemblies.ToDictionary(
+    path => path,
+    path => options.GetValueOrDefault("assets")?.FirstOrDefault() ?? FindAssetsJson(path));
 var inspectors = assemblies
     .Select(path => new AssemblyInspector(
         path,
@@ -24,8 +28,15 @@ var inspectors = assemblies
         (options.GetValueOrDefault("reference-dir") ?? [])
             .Concat(assemblies.Select(a => Path.GetDirectoryName(Path.GetFullPath(a))!))
             .Distinct(),
-        options.GetValueOrDefault("assets")?.FirstOrDefault() ?? FindAssetsJson(path)))
+        assetsJson[path]))
     .ToList();
+
+// The Essentials package the restore resolved the csproj's reference to
+var dependencies = HighestFirst(assetsJson.Values.OfType<string>().Distinct()
+    .SelectMany(AssemblyInspector.EssentialsPackageVersions));
+facts.EssentialsDependencyVersion = dependencies.FirstOrDefault();
+if (dependencies.Count > 1)
+    facts.Warnings.Add($"the build resolved different Essentials versions (by project or framework): {string.Join(", ", dependencies)}");
 
 var source = new SourceScanner(sourceDirs[0])
 {
@@ -36,9 +47,7 @@ source.Scan();
 var portsByClass = new Dictionary<string, RoutingPortFacts>(StringComparer.Ordinal);
 var schemas = new SchemaBuilder(source, facts.Warnings);
 // The package needs the highest any of its factories asks for
-var versions = source.Factories.Select(f => f.MinimumEssentialsVersion).OfType<string>().Distinct()
-    .OrderByDescending(v => Version.TryParse(v.Split('-', '+')[0], out var parsed) ? parsed : new Version())
-    .ToList();
+var versions = HighestFirst(source.Factories.Select(f => f.MinimumEssentialsVersion).OfType<string>());
 facts.MinimumEssentialsVersion = versions.FirstOrDefault();
 if (versions.Count > 1)
     facts.Warnings.Add($"factories set different minimum Essentials versions: {string.Join(", ", versions)}");
@@ -169,6 +178,13 @@ RoutingPortFacts PortsOf(string className)
         portsByClass[className] = ports = source.ReadRoutingPorts(className);
     return ports;
 }
+
+// SemVer order, prereleases below their release ("3.0.1-beta.10" above "3.0.1-beta.2", "3.0.1" above
+// both); a version NuGet can't parse sorts as 0.0.0
+static List<string> HighestFirst(IEnumerable<string> versions) =>
+    versions.Distinct()
+        .OrderByDescending(v => NuGetVersion.TryParse(v, out var parsed) ? parsed : new NuGetVersion(0, 0, 0), VersionComparer.VersionRelease)
+        .ToList();
 
 static Dictionary<string, List<string>> ParseArgs(string[] args)
 {
