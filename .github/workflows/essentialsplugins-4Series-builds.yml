@@ -261,15 +261,20 @@ jobs:
             nuget sources add -name github -source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json -username pepperdash -password ${{ secrets.GITHUB_TOKEN }}
           }
           
-          try {
-            Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
-              $packageName = $_.Name
-              Write-Output "Pushing $packageName to GitHub feed..."
-              nuget push $_.FullName -source github -apikey ${{ secrets.GITHUB_TOKEN }} -SkipDuplicate
+          # nuget.exe is a native command: a failed push sets $LASTEXITCODE but does not
+          # throw, so try/catch never fires. Check the exit code after every push.
+          $failed = @()
+          Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
+            $packageName = $_.Name
+            Write-Output "Pushing $packageName to GitHub feed..."
+            nuget push $_.FullName -source github -apikey ${{ secrets.GITHUB_TOKEN }} -SkipDuplicate
+            if ($LASTEXITCODE -ne 0) {
+              $failed += "$packageName (exit $LASTEXITCODE)"
             }
           }
-          catch {
-            $msg = "Failed to publish to GitHub feed: $($_.Exception.Message)"
+
+          if ($failed.Count -gt 0) {
+            $msg = "Failed to publish to GitHub feed: $($failed -join ', ')"
             Write-Error $msg
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to GitHub Package Registry`n"
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
@@ -303,15 +308,21 @@ jobs:
             Write-Output "Publishing ${{ github.repository }} to NuGet.org"
             nuget setApiKey ${{ secrets.NUGET_API_KEY }} -Source https://api.nuget.org/v3/index.json
             
-            try {
-              Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
-                $packageName = $_.Name
-                Write-Output "Pushing $packageName to NuGet.org..."
-                nuget push $_.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
+            # nuget.exe is a native command: a failed push (for example a 403 from an
+            # expired API key) sets $LASTEXITCODE but does not throw, so try/catch never
+            # fires. Check the exit code after every push.
+            $failed = @()
+            Get-ChildItem -Path .\output -Recurse -Include *.nupkg | ForEach-Object {
+              $packageName = $_.Name
+              Write-Output "Pushing $packageName to NuGet.org..."
+              nuget push $_.FullName -Source https://api.nuget.org/v3/index.json -SkipDuplicate
+              if ($LASTEXITCODE -ne 0) {
+                $failed += "$packageName (exit $LASTEXITCODE)"
               }
             }
-            catch {
-              $msg = "Failed to publish to NuGet.org: $($_.Exception.Message)"
+
+            if ($failed.Count -gt 0) {
+              $msg = "Failed to publish to NuGet.org: $($failed -join ', ')"
               Write-Error $msg
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Publish to Nuget.org`n"
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "***ERROR***`n$msg`n"
