@@ -7,6 +7,7 @@ Welcome to the PepperDash GitHub Workflows documentation. This documentation pro
 1. [Workflows Overview](workflows.md) - A comprehensive overview of all available workflows
 2. [Workflow Details](workflow-details.md) - Detailed information about each workflow
 3. [Getting Started Guide](getting-started.md) - Step-by-step instructions for implementing workflows
+4. [NuGet Trusted Publishing Plan](nuget-trusted-publishing-plan.md) - Plan to replace the `NUGET_API_KEY` secret with short-lived OIDC publishing
 
 ## Quick Start
 
