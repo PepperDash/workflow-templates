@@ -331,7 +331,17 @@ export function gate({ doc, facts, formSidecar }) {
     const expected = Object.keys(facts.typeNames).sort().join(',');
     const actual = Object.keys(doc.typeNames).sort().join(',');
     if (expected !== actual) errors.push("typeNames differ from the factories' TypeNames");
-    if (Object.keys(facts.typeNames).length === 0) warnings.push('no factory TypeNames found');
+
+    // An empty extraction would otherwise publish, and become the next release's baseline
+    const extracted = Object.entries(facts.typeNames);
+    const unread = extracted.filter(([, entry]) => entry.interfaces == null).map(([typeName]) => typeName);
+    if (extracted.length === 0) {
+      errors.push('metadata-extract found no factory TypeNames');
+    } else if (unread.length === extracted.length) {
+      errors.push("metadata-extract couldn't read the built assemblies: no typeName has interfaces or a schema");
+    } else if (unread.length) {
+      warnings.push(`metadata-extract couldn't read the interfaces of ${unread.sort().join(', ')}`);
+    }
   }
 
   if (formSidecar) {

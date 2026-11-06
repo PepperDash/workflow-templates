@@ -281,6 +281,27 @@ describe('assemble and gate', () => {
     assert.equal(assemble({ facts: unknown, baseline, formSidecar: null, release }).doc.essentialsDependencyVersion, undefined);
   });
 
+  it('fails an extraction that found no TypeNames', () => {
+    const empty = { ...extracted, typeNames: {} };
+    const { doc } = assemble({ facts: empty, baseline: null, formSidecar: null, release });
+    assert.deepEqual(gate({ doc, facts: empty, formSidecar: null }).errors, ['metadata-extract found no factory TypeNames']);
+  });
+
+  it("fails an extraction that couldn't read the assemblies, even with a baseline to fall back on", () => {
+    const unread = { ...extracted, typeNames: { testDevice: facts({ interfaces: null, schema: null }) } };
+    const baseline = { typeNames: { testDevice: { interfaces: ['IOld'], schema: schemaWith('host') } } };
+    const { doc } = assemble({ facts: unread, baseline, formSidecar: null, release });
+    assert.match(gate({ doc, facts: unread, formSidecar: null }).errors[0], /couldn't read the built assemblies/);
+  });
+
+  it('warns when only some typeNames have no interfaces', () => {
+    const partial = { ...extracted, typeNames: { testDevice: facts(), otherDevice: facts({ interfaces: null }) } };
+    const { doc } = assemble({ facts: partial, baseline: null, formSidecar: null, release });
+    const { errors, warnings } = gate({ doc, facts: partial, formSidecar: null });
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, ["metadata-extract couldn't read the interfaces of otherDevice"]);
+  });
+
   it("passes the extractor's warnings on as gate warnings", () => {
     const warned = { ...extracted, warnings: ['TestConfig.Port: left out of the schema, missing reference: Crestron'] };
     const { doc } = assemble({ facts: warned, baseline: null, formSidecar: null, release });
