@@ -191,23 +191,24 @@ public sealed class AssemblyInspector : IDisposable
     public void Dispose() => _context.Dispose();
 
     /// <summary>
-    /// The PepperDashEssentials version in a restore's project.assets.json: what the csproj's
+    /// The PepperDashEssentials versions in a restore's project.assets.json: what the csproj's
     /// reference resolved to, whether it names an exact version, a range or a central package version.
+    /// A multi-targeted project can resolve a different version for each framework.
     /// </summary>
-    public static string? EssentialsPackageVersion(string assetsJsonPath)
+    public static IEnumerable<string> EssentialsPackageVersions(string assetsJsonPath)
     {
         if (!File.Exists(assetsJsonPath))
-            return null;
+            return [];
         using var stream = File.OpenRead(assetsJsonPath);
         using var doc = JsonDocument.Parse(stream);
         if (!doc.RootElement.TryGetProperty("libraries", out var libraries) || libraries.ValueKind != JsonValueKind.Object)
-            return null;
+            return [];
         // Keys are "<id>/<version>"; package ids match without regard to case
         return libraries.EnumerateObject()
             .Select(lib => lib.Name.Split('/', 2))
             .Where(parts => parts.Length == 2 && parts[0].Equals("PepperDashEssentials", StringComparison.OrdinalIgnoreCase))
             .Select(parts => parts[1])
-            .FirstOrDefault();
+            .ToList();
     }
 
     /// <summary>
