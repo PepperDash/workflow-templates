@@ -12,6 +12,6 @@
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "1.1.1",
     "@anthropic-ai/sdk": "1.4.0",
-    "ajv": "8.17.1"
+    "ajv": "8.20.0"
   }
 }
