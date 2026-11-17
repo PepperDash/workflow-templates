@@ -16,6 +16,7 @@ Add a job after the 4-series build. The calling job must grant both permissions:
     permissions:
       contents: write   # attach pepperdash-metadata.json to the release
       id-token: write   # GitHub OIDC token for UDM
+    secrets: inherit    # ANTHROPIC_API_KEY for the AI agent, if the org has one
     with:
       tag: ${{ needs.getVersion.outputs.tag }}
 ```
@@ -45,6 +46,7 @@ jobs:
 | `package-id` | the csproj `<PackageId>`, else its `<AssemblyName>`, else its file name | The repo name for UI kinds |
 | `label` | the repo name without `epi-`, title-cased | Portal admins can rename it |
 | `mode` | `publish` | `withdraw` removes the release from Portal's catalog; its files are kept |
+| `agent-model` | `claude-opus-5-5` | The Claude model the [AI agent](#ai-agent) uses |
 
 ## What it does
 
@@ -61,15 +63,36 @@ jobs:
    - Each config property's `description` is its `/// <summary>` in the code, otherwise the baseline's. Its `title` is the baseline's, otherwise one made from the property name (`warmupTimeMs` → "Warmup Time Ms"), since the code has nowhere to write one.
    - `label`, `controlMethods`, `controlPorts`, `deviceKind`, `catalog` and the other UI hints come from the baseline.
    - `formMetadata` comes from the repo's `.pepperdash/form-metadata.json`, otherwise the baseline. Each `schemaId` is pointed at the matching property's `$id` in this release's schema, so a sidecar written as `#root/propertiesConfig/x` still matches a schema that uses `#root/x`.
-4. **Gate.** Any error fails the job before anything is published:
+4. **AI agent.** When something is still missing, the [AI agent](#ai-agent) fills it, and the document is assembled again with its answers. If the agent fails, or the result fails the gate, the first document is published with a warning.
+5. **Gate.** Any error fails the job before anything is published:
    - the document doesn't validate against the v1 schema
    - its typeNames differ from the factories' `TypeNames`
    - a `.pepperdash/form-metadata.json` typeName isn't in the release (a key that differs only in case is a warning, since Essentials ignores case)
    - a `formMetadata` `schemaId` matches no property in this release's schema, for example because the property was renamed
-5. Attaches `pepperdash-metadata.json` to the release, replacing an earlier copy.
-6. Registers the release with each UDM in `PEPPERDASH_UDM_URLS`, uploads its files, and marks it complete.
+6. Attaches `pepperdash-metadata.json` to the release, replacing an earlier copy.
+7. Registers the release with each UDM in `PEPPERDASH_UDM_URLS`, uploads its files, and marks it complete.
 
 The job summary lists, for each typeName, where each field came from and what's missing, including the config properties that have no description anywhere, then what changed since the baseline.
+
+## AI agent
+
+The code can't give everything Portal shows. After the document is assembled, `assemble.mjs --gaps` lists, per typeName, what nothing filled:
+
+- the device type's `label` and `description`
+- config properties with no `description`
+- routing ports the extractor couldn't read (keys built in loops or helpers)
+- form hints, for properties named like references (`displayDeviceKey`, `roomKeys`, `audioOutputPort`), when the typeName has no `formMetadata` at all
+
+[`agent.mjs`](../tools/release-metadata/agent.mjs) sends Claude the gaps and the source files of each gap's factory, device and config classes, in one request with a structured answer and no tools: the model can't run anything or read other files. `assemble.mjs --agent` then takes only answers to real gaps. It never replaces anything from the code, a sidecar or the baseline, adds ports without changing existing ones, and ignores an answer that doesn't match its schema. The gate checks the result like any other document.
+
+What the agent fills becomes part of the next release's baseline, so later releases only ask about new gaps, and a release with none makes no request. `generator.agent` names the model that answered and `generator.prompt` the prompt version, and the job summary lists what it filled.
+
+Credentials, in this order (with neither, the gaps stay in the job summary):
+
+- **Claude API:** an `ANTHROPIC_API_KEY` secret, passed by the caller with `secrets: inherit`.
+- **Amazon Bedrock:** a `PEPPERDASH_AGENT_AWS_ROLE` Actions variable naming an IAM role that GitHub's OIDC token can assume and that can call Claude in `PEPPERDASH_AGENT_AWS_REGION` (default `us-east-1`).
+
+A typical plugin is a few source files, about 12,000 input tokens per request.
 
 ## Portal registration
 
@@ -94,11 +117,13 @@ python3 tools/metadata-extract/build_and_extract.py <repo> facts.json --build-js
 cd tools/release-metadata && npm ci && npm test
 node assemble.mjs --package-id <id> --tag <tag> --repo-url https://github.com/<owner>/<repo> \
   --commit-sha <sha> --published-at <utc> --assets-dir <dir> --facts facts.json [--baseline <file>] \
-  [--form-sidecar <repo>/.pepperdash/form-metadata.json]
+  [--form-sidecar <repo>/.pepperdash/form-metadata.json] --gaps gaps.json
+
+# --dry-run writes the request instead of sending it; without it, needs ANTHROPIC_API_KEY or AWS credentials
+node agent.mjs --gaps gaps.json --document pepperdash-metadata.json --repo <repo> --dry-run request.json
 ```
 
 ## Not done yet
 
-- The AI agent step that fills what the code can't give (ports built in loops or by helper classes, defaults set in code). Until then those gaps carry forward from the baseline or appear in the job summary.
 - Matching each typeName's category and models against Portal's reference data (`.pepperdash/catalog.json`); `catalog` is carried from the baseline.
 - Skipping the extract job when nothing changed since the baseline.

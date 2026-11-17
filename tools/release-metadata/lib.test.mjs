@@ -1,16 +1,20 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  applyAgent,
   assemble,
   assembleTypeName,
   assetTypeOf,
   diff,
+  findGaps,
   gate,
   idPath,
   labelFor,
   mergeSchemaText,
   resolveSchemaIds,
+  schemaNodeAt,
   summarize,
+  validateAgentOutput,
   versionOf,
 } from './lib.mjs';
 
@@ -322,5 +326,113 @@ describe('helpers', () => {
     assert.equal(versionOf('v4.0.0-feature-x.5'), '4.0.0-feature-x.5');
     assert.equal(assetTypeOf('a.CPLZ'), 'cplz');
     assert.equal(assetTypeOf('a.nupkg'), null);
+  });
+});
+
+describe('AI agent gaps', () => {
+  const release = {
+    kind: 'plugin',
+    packageId: 'PepperDash.Essentials.Plugins.Test',
+    label: 'Test',
+    tag: 'v1.0.0',
+    repoUrl: 'https://github.com/PepperDash/epi-test',
+    commitSha: 'a'.repeat(40),
+    publishedAt: '2026-11-04T12:00:00Z',
+    assets: [],
+  };
+  const schema = schemaWith('host', 'displayDeviceKey');
+  schema.$defs.propertiesConfig.properties.inputs = {
+    $id: '#root/inputs',
+    type: 'array',
+    items: { $id: '#root/inputs/items', type: 'object', properties: { key: { $id: '#root/inputs/items/key', type: 'string' } } },
+  };
+  const extracted = {
+    typeNames: {
+      testDevice: facts({
+        schema,
+        routingPorts: { inputs: [port('HdmiIn1')], outputs: [], unresolved: ['src/Device.cs:40: new RoutingInputPort(key, ...)'] },
+      }),
+    },
+  };
+  const assembled = () => assemble({ facts: extracted, baseline: null, formSidecar: null, release });
+  const answer = (overrides = {}) => ({
+    typeNames: [{
+      typeName: 'testDevice',
+      label: 'Test Device',
+      description: 'A test device over TCP.',
+      propertyDescriptions: [
+        { path: 'host', description: 'The device address.' },
+        { path: 'inputs[].key', description: 'The input key.' },
+        { path: 'invented', description: 'Not a property.' },
+      ],
+      routingPorts: { inputs: [port('hdmiIn1'), port('HdmiIn2')], outputs: [port('AudioOut')] },
+      formMetadata: [
+        { path: 'displayDeviceKey', formElement: 'SelectInputText', dataset: 'devices' },
+        { path: 'host', formElement: 'SelectInputText', dataset: 'devices' },
+      ],
+      ...overrides,
+    }],
+  });
+
+  it('lists what nothing filled', () => {
+    const { doc, report } = assembled();
+    const [gap] = findGaps({ doc, report, facts: extracted });
+    assert.equal(gap.typeName, 'testDevice');
+    assert.equal(gap.deviceClass, 'Device');
+    assert.equal(gap.label, true);
+    assert.equal(gap.description, true);
+    assert.deepEqual(gap.properties, ['host', 'displayDeviceKey', 'inputs', 'inputs[].key']);
+    assert.equal(gap.unresolvedPorts.length, 1);
+    // Named like a reference; inputs[].key isn't (the input's own key)
+    assert.deepEqual(gap.formCandidates, ['displayDeviceKey']);
+  });
+
+  it('has nothing to ask for when the baseline filled it all', () => {
+    const { doc } = assembled();
+    const entry = { ...doc.typeNames.testDevice, label: 'Test', description: 'Described.', formMetadata: formEntry('#root/host') };
+    for (const p of Object.values(entry.schema.$defs.propertiesConfig.properties)) p.description = 'Described.';
+    entry.schema.$defs.propertiesConfig.properties.inputs.items.properties.key.description = 'Described.';
+    const baseline = { typeNames: { testDevice: { ...entry, routingPorts: { inputs: [port('HdmiIn1')], outputs: [] } } } };
+    const again = assemble({ facts: extracted, baseline, formSidecar: null, release });
+    assert.deepEqual(findGaps({ ...again, facts: extracted }), []);
+  });
+
+  it('fills only the gaps, and records the agent', () => {
+    const { doc, report } = assembled();
+    const gaps = findGaps({ doc, report, facts: extracted });
+    assert.ok(validateAgentOutput(answer()));
+    const { doc: filled, filled: notes } = applyAgent({ doc, gaps, result: answer(), agent: 'claude-opus-5-5' });
+    const entry = filled.typeNames.testDevice;
+    assert.equal(entry.label, 'Test Device');
+    assert.equal(entry.description, 'A test device over TCP.');
+    assert.equal(schemaNodeAt(entry.schema, 'host').description, 'The device address.');
+    assert.equal(schemaNodeAt(entry.schema, 'inputs[].key').description, 'The input key.');
+    // An existing port isn't duplicated by a differently cased answer; new ones are added
+    assert.deepEqual(entry.routingPorts.inputs.map((p) => p.name), ['HdmiIn1', 'HdmiIn2']);
+    assert.deepEqual(entry.routingPorts.outputs.map((p) => p.name), ['AudioOut']);
+    // host isn't a candidate, so only displayDeviceKey gets a form hint, pointed at its $id
+    assert.deepEqual(entry.formMetadata.propertyMetadata.properties, {
+      displayDeviceKey: { schemaId: '#root/displayDeviceKey', formElement: 'SelectInputText', items: { dataset: 'devices' } },
+    });
+    assert.deepEqual(filled.generator, { script: doc.generator.script, prompt: '1', agent: 'claude-opus-5-5', reusedFrom: null });
+    assert.ok(notes.includes('testDevice: 2 property descriptions'));
+    assert.deepEqual(gate({ doc: filled, facts: extracted, formSidecar: null }).errors, []);
+    // The input document is untouched
+    assert.equal(doc.typeNames.testDevice.label, undefined);
+  });
+
+  it('leaves the document alone when the agent answers nothing useful', () => {
+    const { doc, report } = assembled();
+    const gaps = findGaps({ doc, report, facts: extracted });
+    const empty = answer({ label: null, description: '  ', propertyDescriptions: [], routingPorts: null, formMetadata: [] });
+    const { doc: same, filled } = applyAgent({ doc, gaps, result: empty, agent: 'claude-opus-5-5' });
+    assert.deepEqual(filled, []);
+    assert.deepEqual(same, doc);
+  });
+
+  it('rejects an answer outside its schema', () => {
+    assert.equal(validateAgentOutput({ typeNames: [{ typeName: 'x' }] }), false);
+    const badDataset = answer({ formMetadata: [{ path: 'a', formElement: 'SelectInputText', dataset: 'specifiedOptions' }] });
+    assert.equal(validateAgentOutput(badDataset), false);
   });
 });

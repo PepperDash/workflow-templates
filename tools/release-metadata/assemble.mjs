@@ -1,16 +1,29 @@
 // node assemble.mjs --kind plugin --package-id <id> --tag <tag> --repo-url <url> --commit-sha <sha>
 //                   --published-at <utc> --assets-dir <dir> [--facts facts.json] [--baseline <file>]
 //                   [--form-sidecar <file>] [--label <label>] [--out pepperdash-metadata.json]
-//                   [--summary summary.md]
+//                   [--summary summary.md] [--gaps gaps.json] [--agent agent.json]
 //
 // Writes the document and a Markdown summary, then exits 1 if the gate fails. The document is
 // written either way, so a failed run can be inspected; the workflow only publishes on success.
+// --gaps writes what nothing filled (agent.mjs's input); --agent fills those gaps from agent.mjs's
+// answer, ignoring an answer that doesn't match its schema.
 
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { assemble, assetTypeOf, diff, gate, labelFor, NO_DEVICE_KINDS, summarize } from './lib.mjs';
+import {
+  applyAgent,
+  assemble,
+  assetTypeOf,
+  diff,
+  findGaps,
+  gate,
+  labelFor,
+  NO_DEVICE_KINDS,
+  summarize,
+  validateAgentOutput,
+} from './lib.mjs';
 
 const { values: args } = parseArgs({
   options: {
@@ -27,6 +40,8 @@ const { values: args } = parseArgs({
     'form-sidecar': { type: 'string' },
     out: { type: 'string', default: 'pepperdash-metadata.json' },
     summary: { type: 'string', default: 'summary.md' },
+    gaps: { type: 'string' },
+    agent: { type: 'string' },
   },
 });
 
@@ -64,7 +79,7 @@ const baseline = readJson(args.baseline);
 const formSidecar = readJson(args['form-sidecar']);
 const repoUrl = args['repo-url'].replace(/\.git$/, '');
 
-const { doc, report } = assemble({
+const assembled = assemble({
   facts,
   baseline,
   formSidecar,
@@ -79,10 +94,25 @@ const { doc, report } = assemble({
     assets: readAssets(args['assets-dir']),
   },
 });
+const { report } = assembled;
+const gaps = findGaps({ doc: assembled.doc, report, facts });
+let doc = assembled.doc;
+let agent = null;
+const agentWarnings = [];
+if (args.agent) {
+  const answer = readJson(args.agent);
+  if (!answer?.result || !validateAgentOutput(answer.result)) {
+    agentWarnings.push(`${args.agent} isn't a valid agent answer; nothing from it was used`);
+  } else {
+    ({ doc, ...agent } = applyAgent({ doc, gaps, result: answer.result, agent: answer.agent }));
+  }
+}
 const gateResult = gate({ doc, facts: facts ?? { typeNames: {} }, formSidecar });
+gateResult.warnings.push(...agentWarnings);
 
 writeFileSync(args.out, JSON.stringify(doc, null, 2) + '\n');
-writeFileSync(args.summary, summarize({ doc, report, gateResult, changes: diff(baseline, doc) }));
+writeFileSync(args.summary, summarize({ doc, report, gateResult, changes: diff(baseline, doc), agent }));
+if (args.gaps) writeFileSync(args.gaps, JSON.stringify(gaps, null, 2) + '\n');
 
 for (const error of gateResult.errors) console.error(`error: ${error}`);
 for (const warning of gateResult.warnings) console.error(`warning: ${warning}`);

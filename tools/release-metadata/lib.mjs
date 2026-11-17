@@ -310,6 +310,213 @@ export function assemble({ facts, baseline, formSidecar, release }) {
   return { doc, report };
 }
 
+// Bump when the agent's instructions or output change, so documents record which version filled them
+export const PROMPT_VERSION = '1';
+
+// A config property named like a reference to another part of the config (displayDeviceKey,
+// roomKeys, externalSourceInputPort): the config tool can draw these as pickers
+const REFERENCE_NAME = /[a-z0-9](Key|Keys|InputPort|InputPorts|OutputPort|OutputPorts)$/;
+
+/** The schema node a property path ("monitor.pollInterval", "activeInputs[].key", "map{}.x") names */
+export function schemaNodeAt(schema, path) {
+  let node = schema?.$defs?.propertiesConfig;
+  for (const segment of path.match(/[^.[\]{}]+|\[\]|\{\}/g) ?? []) {
+    if (!node || typeof node !== 'object') return undefined;
+    if (segment === '[]') node = node.items;
+    else if (segment === '{}') node = node.additionalProperties;
+    else node = node.properties?.[segment];
+  }
+  return node && typeof node === 'object' ? node : undefined;
+}
+
+/** Paths of the string and string-array properties named like references, at any depth */
+function referenceProperties(schema) {
+  const found = [];
+  const isString = (p) => p?.type === 'string' || (p?.type === 'array' && p.items?.type === 'string');
+  const walk = (node, path) => {
+    if (node?.items && typeof node.items === 'object') walk(node.items, `${path}[]`);
+    for (const [name, property] of Object.entries(node?.properties ?? {})) {
+      const propertyPath = path ? `${path}.${name}` : name;
+      if (REFERENCE_NAME.test(name) && isString(property)) found.push(propertyPath);
+      walk(property, propertyPath);
+    }
+  };
+  walk(schema?.$defs?.propertiesConfig, '');
+  return found;
+}
+
+/**
+ * What the code, the sidecars and the baseline left empty, per typeName: what the agent is asked
+ * to fill. Form hints are only asked for when nothing gave the typeName any formMetadata, so a
+ * developer's sidecar is never added to.
+ */
+export function findGaps({ doc, report, facts }) {
+  const gaps = [];
+  for (const [typeName, entry] of Object.entries(doc.typeNames)) {
+    const typeFacts = facts?.typeNames?.[typeName] ?? {};
+    const sources = report[typeName]?.sources ?? {};
+    const gap = {
+      typeName,
+      factory: typeFacts.factory ?? null,
+      deviceClass: typeFacts.deviceClass ?? null,
+      configClass: typeFacts.configClass ?? null,
+      label: entry.label === undefined,
+      description: !entry.description,
+      properties: sources.descriptions?.missing ?? [],
+      unresolvedPorts: sources.routingPorts === 'code (partial)' ? typeFacts.routingPorts?.unresolved ?? [] : [],
+      formCandidates: entry.formMetadata ? [] : referenceProperties(entry.schema),
+    };
+    if (gap.label || gap.description || gap.properties.length || gap.unresolvedPorts.length || gap.formCandidates.length) {
+      gaps.push(gap);
+    }
+  }
+  return gaps;
+}
+
+const definitions = metadataSchema.definitions;
+const nullable = (schema) => ({ anyOf: [schema, { type: 'null' }] });
+const agentPort = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'label', 'signalType', 'portConnectionType'],
+  properties: {
+    name: { type: 'string' },
+    label: { type: 'string' },
+    signalType: { enum: definitions.routingPort.properties.signalType.enum },
+    portConnectionType: { enum: definitions.routingPort.properties.portConnectionType.enum },
+  },
+};
+
+/**
+ * What the agent returns, as a structured output: lists rather than objects keyed by name, since
+ * structured outputs need every object closed. specifiedOptions is left out of the datasets because
+ * it also needs the options themselves.
+ */
+export const AGENT_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['typeNames'],
+  properties: {
+    typeNames: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['typeName', 'label', 'description', 'propertyDescriptions', 'routingPorts', 'formMetadata'],
+        properties: {
+          typeName: { type: 'string' },
+          label: nullable({ type: 'string' }),
+          description: nullable({ type: 'string' }),
+          propertyDescriptions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['path', 'description'],
+              properties: { path: { type: 'string' }, description: { type: 'string' } },
+            },
+          },
+          routingPorts: nullable({
+            type: 'object',
+            additionalProperties: false,
+            required: ['inputs', 'outputs'],
+            properties: { inputs: { type: 'array', items: agentPort }, outputs: { type: 'array', items: agentPort } },
+          }),
+          formMetadata: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['path', 'formElement', 'dataset'],
+              properties: {
+                path: { type: 'string' },
+                formElement: { enum: definitions.formPropertyMetadata.properties.formElement.enum },
+                dataset: {
+                  enum: definitions.formPropertyMetadata.properties.items.properties.dataset.enum
+                    .filter((d) => d !== 'specifiedOptions'),
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+export const validateAgentOutput = ajv.compile(AGENT_OUTPUT_SCHEMA);
+
+/**
+ * Fills the gaps from the agent's answer and nothing else: a field the agent answers that wasn't a
+ * gap, or a property path it invents, is ignored. Ports are only added (by name), never replaced.
+ * Returns the new document and what was filled, as "typeName: field" strings.
+ */
+export function applyAgent({ doc, gaps, result, agent }) {
+  const out = structuredClone(doc);
+  const filled = [];
+  const answers = new Map((result?.typeNames ?? []).map((t) => [t.typeName, t]));
+  for (const gap of gaps) {
+    const answer = answers.get(gap.typeName);
+    const entry = out.typeNames[gap.typeName];
+    if (!answer || !entry) continue;
+    const note = (field) => filled.push(`${gap.typeName}: ${field}`);
+
+    if (gap.label && answer.label?.trim()) {
+      entry.label = answer.label.trim();
+      note('label');
+    }
+    if (gap.description && answer.description?.trim()) {
+      entry.description = answer.description.trim();
+      note('description');
+    }
+
+    const wanted = new Set(gap.properties);
+    let described = 0;
+    for (const { path, description } of answer.propertyDescriptions ?? []) {
+      const node = wanted.has(path) ? schemaNodeAt(entry.schema, path) : undefined;
+      if (node && !node.description && description.trim()) {
+        node.description = description.trim();
+        described++;
+      }
+    }
+    if (described) note(`${described} property description${described === 1 ? '' : 's'}`);
+
+    if (gap.unresolvedPorts.length && answer.routingPorts) {
+      const ports = { inputs: [...(entry.routingPorts?.inputs ?? [])], outputs: [...(entry.routingPorts?.outputs ?? [])] };
+      let added = 0;
+      for (const side of ['inputs', 'outputs']) {
+        const names = new Set(ports[side].map((p) => p.name.toLowerCase()));
+        for (const port of answer.routingPorts[side]) {
+          if (!port.name || names.has(port.name.toLowerCase())) continue;
+          ports[side].push(port);
+          names.add(port.name.toLowerCase());
+          added++;
+        }
+      }
+      if (added) {
+        entry.routingPorts = ports;
+        note(`${added} routing port${added === 1 ? '' : 's'}`);
+      }
+    }
+
+    if (gap.formCandidates.length && answer.formMetadata?.length) {
+      const properties = {};
+      for (const { path, formElement, dataset } of answer.formMetadata) {
+        const node = gap.formCandidates.includes(path) ? schemaNodeAt(entry.schema, path) : undefined;
+        // Keyed by property name, as the config tool reads it
+        const name = path.split(/[.[\]{}]+/).filter(Boolean).pop();
+        if (!node?.$id || properties[name]) continue;
+        properties[name] = { schemaId: node.$id, formElement, items: { dataset } };
+      }
+      if (Object.keys(properties).length) {
+        entry.formMetadata = { propertyMetadata: { properties } };
+        note(`formMetadata for ${Object.keys(properties).join(', ')}`);
+      }
+    }
+  }
+  if (filled.length) out.generator = { ...out.generator, prompt: PROMPT_VERSION, agent };
+  return { doc: out, filled };
+}
+
 function describeErrors(errors) {
   return (errors ?? []).map((e) => {
     const detail = e.keyword === 'additionalProperties' ? ` (${e.params.additionalProperty})` : '';
@@ -401,7 +608,7 @@ export function diff(baseline, doc) {
 }
 
 /** Markdown for $GITHUB_STEP_SUMMARY */
-export function summarize({ doc, report, gateResult, changes }) {
+export function summarize({ doc, report, gateResult, changes, agent }) {
   const lines = [`## pepperdash-metadata.json for ${doc.tag}`, ''];
   if (gateResult.errors.length) {
     lines.push('**Gate failed**', '', ...gateResult.errors.map((e) => `- ${e}`), '');
@@ -409,6 +616,10 @@ export function summarize({ doc, report, gateResult, changes }) {
     lines.push('Gate passed.', '');
   }
   if (gateResult.warnings.length) lines.push(...gateResult.warnings.map((w) => `- Warning: ${w}`), '');
+  if (agent?.filled.length) {
+    lines.push(`<details><summary>Filled by the AI agent (${doc.generator.agent}, prompt ${doc.generator.prompt})</summary>`, '');
+    lines.push(...agent.filled.map((f) => `- ${f}`), '', '</details>', '');
+  }
 
   const typeNames = Object.keys(report);
   if (typeNames.length) {
