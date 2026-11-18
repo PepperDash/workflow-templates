@@ -7,12 +7,14 @@ name: PepperDash Release Metadata
 #
 # Call it after the release's files are uploaded, from a job that grants
 #   permissions: { contents: write, id-token: write }
+# and passes `secrets: inherit` (or ANTHROPIC_API_KEY) so the AI agent can fill what the code doesn't.
 #
 #   metadata:
 #     needs: [getVersion, build-4Series]
 #     if: needs.getVersion.outputs.newVersion == 'true'
 #     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
 #     permissions: { contents: write, id-token: write }
+#     secrets: inherit
 #     with:
 #       tag: ${{ needs.getVersion.outputs.tag }}
 #
@@ -45,6 +47,15 @@ on:
         required: false
         type: string
         default: publish
+      agent-model:
+        description: 'The Claude model the AI agent uses to fill gaps'
+        required: false
+        type: string
+        default: claude-opus-5-5
+    secrets:
+      ANTHROPIC_API_KEY:
+        description: 'For the AI agent, through the Claude API. Without it, or the PEPPERDASH_AGENT_AWS_ROLE variable for Amazon Bedrock, gaps stay in the job summary'
+        required: false
 
 env:
   TAG: ${{ inputs.tag }}
@@ -158,6 +169,16 @@ jobs:
       - name: Install tools
         run: npm ci --prefix "$TOOLS/release-metadata" --no-audit --no-fund
 
+      # Amazon Bedrock for the AI agent, when there's no ANTHROPIC_API_KEY: a role GitHub's OIDC
+      # token can assume, with access to Claude in the PEPPERDASH_AGENT_AWS_REGION region
+      - name: AWS credentials for the AI agent
+        if: vars.PEPPERDASH_AGENT_AWS_ROLE != '' && inputs.kind != 'userInterface' && inputs.kind != 'touchpanelWrapper'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.PEPPERDASH_AGENT_AWS_ROLE }}
+          aws-region: ${{ vars.PEPPERDASH_AGENT_AWS_REGION || 'us-east-1' }}
+
       - name: Download facts
         if: needs.extract.result == 'success'
         uses: actions/download-artifact@v8
@@ -205,8 +226,11 @@ jobs:
             rm -f baseline/pepperdash-metadata.json
           done
 
-      - name: Assemble and check pepperdash-metadata.json
+      - name: Assemble, fill gaps and check pepperdash-metadata.json
+        timeout-minutes: 20
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_MODEL: ${{ inputs.agent-model }}
           KIND: ${{ inputs.kind }}
           PACKAGE_ID: ${{ inputs.package-id }}
           LABEL: ${{ inputs.label }}
@@ -226,15 +250,33 @@ jobs:
             --commit-sha "$COMMIT_SHA"
             --published-at "$PUBLISHED_AT"
             --assets-dir assets
-            --out pepperdash-metadata.json
-            --summary summary.md
           )
           if [ -n "$LABEL" ]; then args+=(--label "$LABEL"); fi
           if [ -f facts.json ]; then args+=(--facts facts.json); fi
           if [ -n "$BASELINE" ]; then args+=(--baseline "$BASELINE"); fi
           if [ -f repo/.pepperdash/form-metadata.json ]; then args+=(--form-sidecar repo/.pepperdash/form-metadata.json); fi
           status=0
-          node "$TOOLS/release-metadata/assemble.mjs" "${args[@]}" || status=$?
+          node "$TOOLS/release-metadata/assemble.mjs" "${args[@]}" \
+            --out pepperdash-metadata.json --summary summary.md --gaps gaps.json || status=$?
+
+          # The AI agent fills what the code, the sidecars and the baseline didn't. If it fails, or
+          # its additions fail the gate, the release is published without them
+          gaps=$(jq length gaps.json 2>/dev/null || echo 0)
+          if [ "$status" -eq 0 ] && [ "$gaps" -gt 0 ]; then
+            if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "${AWS_REGION:-}" ]; then
+              echo "::notice::No AI agent credentials; $gaps typeNames keep their gaps (see the summary)"
+            # 15 minutes, inside the step's 20, so a stalled call fails here and the release still publishes
+            elif ! timeout 900 node "$TOOLS/release-metadata/agent.mjs" --gaps gaps.json --document pepperdash-metadata.json \
+                --repo repo --out agent.json --model "$AGENT_MODEL"; then
+              echo "::warning::The AI agent failed; publishing without its additions"
+            elif node "$TOOLS/release-metadata/assemble.mjs" "${args[@]}" --agent agent.json \
+                --out with-agent.json --summary with-agent.md; then
+              mv with-agent.json pepperdash-metadata.json
+              mv with-agent.md summary.md
+            else
+              echo "::warning::The AI agent's additions failed the gate (errors above); publishing without them"
+            fi
+          fi
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
           exit $status
 
@@ -243,7 +285,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pepperdash-metadata
-          path: pepperdash-metadata.json
+          path: |
+            pepperdash-metadata.json
+            gaps.json
+            agent.json
           if-no-files-found: ignore
           retention-days: 30
 

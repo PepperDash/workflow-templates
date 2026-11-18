@@ -399,14 +399,15 @@ public sealed class SourceScanner
 
     /// <summary>
     /// new RoutingInputPort(key, eRoutingSignalType.X, eRoutingPortConnectionType.Y, ...) in the device
-    /// class and the plugin classes it derives from. A key that isn't a literal or a string constant
-    /// is reported as unresolved for the agent.
+    /// class and the plugin classes it derives from. A key that isn't a literal or a string constant,
+    /// or a port a helper's AddRoutingPort call adds, is reported as unresolved for the agent.
     /// </summary>
     public RoutingPortFacts ReadRoutingPorts(string deviceClass)
     {
         var ports = new RoutingPortFacts();
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var pending = new Queue<string>([deviceClass]);
+        var scanned = new List<ClassDeclarationSyntax>();
 
         while (pending.TryDequeue(out var className))
         {
@@ -414,6 +415,7 @@ public sealed class SourceScanner
                 continue;
             foreach (var cls in Declarations(className))
             {
+                scanned.Add(cls);
                 foreach (var baseType in cls.BaseList?.Types ?? default)
                     pending.Enqueue(RightmostName(baseType.Type));
 
@@ -434,6 +436,29 @@ public sealed class SourceScanner
                         list.Add(port);
                 }
             }
+        }
+
+        // Ports a helper adds (NVX's HdmiInput1Port.AddRoutingPort(this)) can't be read here. A call to
+        // the device's own AddRoutingPorts() isn't one: its constructions were read above
+        var ownMethods = scanned
+            .SelectMany(c => c.Members.OfType<MethodDeclarationSyntax>())
+            .Select(m => m.Identifier.ValueText)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var call in scanned.SelectMany(c => c.DescendantNodes().OfType<InvocationExpressionSyntax>()))
+        {
+            var (name, own) = call.Expression switch
+            {
+                IdentifierNameSyntax identifier => (identifier.Identifier.ValueText, true),
+                MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax or BaseExpressionSyntax } member =>
+                    (member.Name.Identifier.ValueText, true),
+                MemberAccessExpressionSyntax member => (member.Name.Identifier.ValueText, false),
+                _ => (null, false),
+            };
+            if (name is null || !name.StartsWith("AddRoutingPort", StringComparison.Ordinal))
+                continue;
+            if (own && ownMethods.Contains(name))
+                continue;
+            ports.Unresolved.Add(Location(call));
         }
         return ports;
     }
