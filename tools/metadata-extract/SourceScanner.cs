@@ -399,8 +399,8 @@ public sealed class SourceScanner
 
     /// <summary>
     /// new RoutingInputPort(key, eRoutingSignalType.X, eRoutingPortConnectionType.Y, ...) in the device
-    /// class and the plugin classes it derives from. A key that isn't a literal or a string constant
-    /// is reported as unresolved for the agent.
+    /// class and the plugin classes it derives from. A key that isn't a literal or a string constant,
+    /// or a port a helper's AddRoutingPort call adds, is reported as unresolved for the agent.
     /// </summary>
     public RoutingPortFacts ReadRoutingPorts(string deviceClass)
     {
@@ -432,6 +432,19 @@ public sealed class SourceScanner
                         ports.Unresolved.Add(Location(creation));
                     else if (list.All(p => p.Name != port.Name))
                         list.Add(port);
+                }
+
+                // Ports a helper adds (NVX's HdmiInput1Port.AddRoutingPort(this)) can't be read here
+                foreach (var call in cls.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    var name = call.Expression switch
+                    {
+                        MemberAccessExpressionSyntax member => member.Name.Identifier.ValueText,
+                        IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
+                        _ => null,
+                    };
+                    if (name is not null && name.StartsWith("AddRoutingPort", StringComparison.Ordinal))
+                        ports.Unresolved.Add(Location(call));
                 }
             }
         }

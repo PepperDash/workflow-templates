@@ -64,7 +64,7 @@ Rules it applies, matching the spec and the config tool's existing schemas:
 
 ## Known gaps
 
-- Routing ports whose keys come from loops, interpolation, `static readonly` fields or enumeration classes (`DeviceInputEnum.Hdmi1.Name`) are listed as `unresolved`. Ports added by helper classes (NVX's `HdmiInput1Port.AddRoutingPort(this)`) aren't found at all. Both are left to the agent.
+- Routing ports whose keys come from loops, interpolation, `static readonly` fields or enumeration classes (`DeviceInputEnum.Hdmi1.Name`) are listed as `unresolved`. Ports added by helper classes (NVX's `HdmiInput1Port.AddRoutingPort(this)`) can't be read, so each `AddRoutingPort` call is listed as `unresolved` too. Both are left to the agent.
 - A factory split across `partial` declarations is read one declaration at a time, so the part without the base class isn't seen. None of the current packages does this.
 - Defaults set in device code (`config.X > 0 ? config.X : Default`) or in Essentials' own config classes aren't found.
 - 3-series (Compact Framework) projects can't build on Linux or macOS, so they get the source half only.
