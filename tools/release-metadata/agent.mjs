@@ -6,8 +6,11 @@
 // files it's given and answers in AGENT_OUTPUT_SCHEMA, and assemble.mjs --agent then takes only
 // the answers to real gaps.
 //
-// Credentials: ANTHROPIC_API_KEY for the Claude API; otherwise Amazon Bedrock with the AWS
-// credentials and AWS_REGION in the environment. Writes nothing and exits 0 when there are no gaps;
+// Credentials, in the SDK's order: ANTHROPIC_API_KEY for the Claude API; otherwise workload identity
+// federation (ANTHROPIC_FEDERATION_RULE_ID, ANTHROPIC_ORGANIZATION_ID and ANTHROPIC_IDENTITY_TOKEN_FILE,
+// with ANTHROPIC_SERVICE_ACCOUNT_ID and ANTHROPIC_WORKSPACE_ID), which the SDK exchanges for a
+// short-lived token itself; otherwise Amazon Bedrock with the AWS credentials and AWS_REGION in the
+// environment. Writes nothing and exits 0 when there are no gaps;
 // exits 1 on any failure, which the workflow treats as "publish without the agent". --dry-run
 // writes the request it would send instead of sending it.
 
@@ -139,8 +142,12 @@ if (args['dry-run']) {
   process.exit(0);
 }
 
+const env = process.env;
+const federated = Boolean(env.ANTHROPIC_FEDERATION_RULE_ID && env.ANTHROPIC_ORGANIZATION_ID
+  && (env.ANTHROPIC_IDENTITY_TOKEN_FILE || env.ANTHROPIC_IDENTITY_TOKEN));
+
 async function ask() {
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (env.ANTHROPIC_API_KEY || federated) {
     // On a safety decline the API retries on a fallback model it picks by the decline's category
     const stream = new Anthropic().beta.messages.stream({
       ...request,
@@ -148,13 +155,15 @@ async function ask() {
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
     });
-    return { message: await stream.finalMessage(), provider: 'Claude API' };
+    const provider = env.ANTHROPIC_API_KEY ? 'Claude API' : 'Claude API (workload identity)';
+    return { message: await stream.finalMessage(), provider };
   }
-  if (process.env.AWS_REGION) {
+  if (env.AWS_REGION) {
     const stream = new AnthropicBedrockMantle().messages.stream({ ...request, model: `anthropic.${args.model}` });
     return { message: await stream.finalMessage(), provider: 'Amazon Bedrock' };
   }
-  throw new Error('no credentials: set ANTHROPIC_API_KEY, or AWS credentials and AWS_REGION for Bedrock');
+  throw new Error('no credentials: set ANTHROPIC_API_KEY, the ANTHROPIC_FEDERATION_RULE_ID, ANTHROPIC_ORGANIZATION_ID '
+    + 'and ANTHROPIC_IDENTITY_TOKEN_FILE federation variables, or AWS credentials and AWS_REGION for Bedrock');
 }
 
 let message;
@@ -162,7 +171,11 @@ let provider;
 try {
   ({ message, provider } = await ask());
 } catch (error) {
-  if (error instanceof Anthropic.AuthenticationError) {
+  // Not exported from the package root; the exchange's 401 is deliberately opaque, so point at the log
+  if (error?.constructor?.name === 'WorkloadIdentityError') {
+    const hint = error.statusCode === 401 ? " The Claude Console's workload identity authentication history gives the reason." : '';
+    console.error(`The workload identity token exchange failed: ${error.message}.${hint}`);
+  } else if (error instanceof Anthropic.AuthenticationError) {
     console.error(`The model provider rejected the credentials (${error.status})`);
   } else if (error instanceof Anthropic.RateLimitError) {
     console.error(`Rate limited (${error.status}); re-run the workflow later`);

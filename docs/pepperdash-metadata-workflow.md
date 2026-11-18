@@ -15,8 +15,8 @@ Add a job after the 4-series build. The calling job must grant both permissions:
     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
     permissions:
       contents: write   # attach pepperdash-metadata.json to the release
-      id-token: write   # GitHub OIDC token for UDM
-    secrets: inherit    # ANTHROPIC_API_KEY for the AI agent, if the org has one
+      id-token: write   # GitHub OIDC tokens for UDM and the AI agent
+    secrets: inherit    # ANTHROPIC_API_KEY for the AI agent, only if the org doesn't use workload identity federation
     with:
       tag: ${{ needs.getVersion.outputs.tag }}
 ```
@@ -87,9 +87,15 @@ The code can't give everything Portal shows. After the document is assembled, `a
 
 What the agent fills becomes part of the next release's baseline, so later releases only ask about new gaps, and a release with none makes no request. `generator.agent` names the model that answered and `generator.prompt` the prompt version, and the job summary lists what it filled.
 
-Credentials, in this order (with neither, the gaps stay in the job summary):
+Credentials, in this order (with none, the gaps stay in the job summary):
 
-- **Claude API:** an `ANTHROPIC_API_KEY` secret, passed by the caller with `secrets: inherit`.
+- **Claude API with a key:** an `ANTHROPIC_API_KEY` secret, passed by the caller with `secrets: inherit`. When set, it's used even if federation is configured.
+- **Claude API with workload identity federation:** no secret. Just before the agent runs, the job gets a GitHub OIDC token for the audience `https://api.anthropic.com`, and the Anthropic SDK exchanges it for a short-lived Claude API token under a federation rule. Set these Actions variables (organization or repository; none are secret):
+  - `ANTHROPIC_FEDERATION_RULE_ID` (`fdrl_...`) and `ANTHROPIC_ORGANIZATION_ID` (required)
+  - `ANTHROPIC_WORKSPACE_ID` (`wrkspc_...`; required when the rule covers more than one workspace)
+  - `ANTHROPIC_SERVICE_ACCOUNT_ID` (`svac_...`; optional, must be the rule's service account)
+
+  The federation rule decides which workflows may get a token. Since this is a reusable workflow, the token's `sub` names the calling repo, not this workflow; match `job_workflow_ref` too (for example the CEL condition `claims.job_workflow_ref.startsWith("PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@")`), so other workflows in the organization can't use the rule. A `workspace:inference` scope is enough. A failed exchange returns an opaque 401; the reason is in the Claude Console's workload identity authentication history.
 - **Amazon Bedrock:** a `PEPPERDASH_AGENT_AWS_ROLE` Actions variable naming an IAM role that GitHub's OIDC token can assume and that can call Claude in `PEPPERDASH_AGENT_AWS_REGION` (default `us-east-1`).
 
 A typical plugin is a few source files, about 12,000 input tokens per request.
