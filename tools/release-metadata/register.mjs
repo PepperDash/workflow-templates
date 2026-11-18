@@ -40,12 +40,23 @@ if (!bases.length) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// GitHub's token endpoint answers in well under a second; a stall shouldn't hold the job
+const OIDC_TIMEOUT_MS = 30_000;
 
 /** A fresh token per call: they last about five minutes and uploads can be slow */
 async function oidcToken() {
   const { ACTIONS_ID_TOKEN_REQUEST_URL: url, ACTIONS_ID_TOKEN_REQUEST_TOKEN: token } = process.env;
   if (!url || !token) throw new Error('no GitHub OIDC token available: the job needs permissions id-token: write');
-  const response = await fetch(`${url}&audience=${AUDIENCE}`, { headers: { Authorization: `bearer ${token}` } });
+  let response;
+  try {
+    response = await fetch(`${url}&audience=${AUDIENCE}`, {
+      headers: { Authorization: `bearer ${token}` },
+      signal: AbortSignal.timeout(OIDC_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error.name === 'TimeoutError') throw new Error(`OIDC token request timed out after ${OIDC_TIMEOUT_MS / 1000}s`);
+    throw error;
+  }
   if (!response.ok) throw new Error(`OIDC token request failed: ${response.status}`);
   return (await response.json()).value;
 }

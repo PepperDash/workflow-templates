@@ -78,7 +78,8 @@ jobs:
       - name: Find this workflow's commit
         id: sha
         run: |
-          token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          # Bounded, so a stalled token endpoint fails the run in seconds rather than at the job timeout
+          token=$(curl -sSf --max-time 30 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=pepperdash-workflow-templates" | jq -r .value)
           echo "::add-mask::$token"
           payload=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
