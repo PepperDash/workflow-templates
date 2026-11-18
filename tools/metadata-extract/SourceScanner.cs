@@ -407,6 +407,7 @@ public sealed class SourceScanner
         var ports = new RoutingPortFacts();
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var pending = new Queue<string>([deviceClass]);
+        var scanned = new List<ClassDeclarationSyntax>();
 
         while (pending.TryDequeue(out var className))
         {
@@ -414,6 +415,7 @@ public sealed class SourceScanner
                 continue;
             foreach (var cls in Declarations(className))
             {
+                scanned.Add(cls);
                 foreach (var baseType in cls.BaseList?.Types ?? default)
                     pending.Enqueue(RightmostName(baseType.Type));
 
@@ -433,20 +435,30 @@ public sealed class SourceScanner
                     else if (list.All(p => p.Name != port.Name))
                         list.Add(port);
                 }
-
-                // Ports a helper adds (NVX's HdmiInput1Port.AddRoutingPort(this)) can't be read here
-                foreach (var call in cls.DescendantNodes().OfType<InvocationExpressionSyntax>())
-                {
-                    var name = call.Expression switch
-                    {
-                        MemberAccessExpressionSyntax member => member.Name.Identifier.ValueText,
-                        IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
-                        _ => null,
-                    };
-                    if (name is not null && name.StartsWith("AddRoutingPort", StringComparison.Ordinal))
-                        ports.Unresolved.Add(Location(call));
-                }
             }
+        }
+
+        // Ports a helper adds (NVX's HdmiInput1Port.AddRoutingPort(this)) can't be read here. A call to
+        // the device's own AddRoutingPorts() isn't one: its constructions were read above
+        var ownMethods = scanned
+            .SelectMany(c => c.Members.OfType<MethodDeclarationSyntax>())
+            .Select(m => m.Identifier.ValueText)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var call in scanned.SelectMany(c => c.DescendantNodes().OfType<InvocationExpressionSyntax>()))
+        {
+            var (name, own) = call.Expression switch
+            {
+                IdentifierNameSyntax identifier => (identifier.Identifier.ValueText, true),
+                MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax or BaseExpressionSyntax } member =>
+                    (member.Name.Identifier.ValueText, true),
+                MemberAccessExpressionSyntax member => (member.Name.Identifier.ValueText, false),
+                _ => (null, false),
+            };
+            if (name is null || !name.StartsWith("AddRoutingPort", StringComparison.Ordinal))
+                continue;
+            if (own && ownMethods.Contains(name))
+                continue;
+            ports.Unresolved.Add(Location(call));
         }
         return ports;
     }
