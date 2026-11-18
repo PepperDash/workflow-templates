@@ -7,7 +7,9 @@ name: PepperDash Release Metadata
 #
 # Call it after the release's files are uploaded, from a job that grants
 #   permissions: { contents: write, id-token: write }
-# and passes `secrets: inherit` (or ANTHROPIC_API_KEY) so the AI agent can fill what the code doesn't.
+# and, for the AI agent to fill what the code doesn't, has the ANTHROPIC_FEDERATION_RULE_ID and
+# ANTHROPIC_ORGANIZATION_ID Actions variables (workload identity federation), or passes
+# `secrets: inherit` with an ANTHROPIC_API_KEY secret.
 #
 #   metadata:
 #     needs: [getVersion, build-4Series]
@@ -54,7 +56,7 @@ on:
         default: claude-opus-5-5
     secrets:
       ANTHROPIC_API_KEY:
-        description: 'For the AI agent, through the Claude API. Without it, or the PEPPERDASH_AGENT_AWS_ROLE variable for Amazon Bedrock, gaps stay in the job summary'
+        description: 'For the AI agent, through the Claude API, when the org does not use workload identity federation (the ANTHROPIC_FEDERATION_RULE_ID variable). Without any agent credentials, gaps stay in the job summary'
         required: false
 
 env:
@@ -76,7 +78,8 @@ jobs:
       - name: Find this workflow's commit
         id: sha
         run: |
-          token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          # Bounded, so a stalled token endpoint fails the run in seconds rather than at the job timeout
+          token=$(curl -sSf --max-time 30 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=pepperdash-workflow-templates" | jq -r .value)
           echo "::add-mask::$token"
           payload=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
@@ -230,6 +233,11 @@ jobs:
         timeout-minutes: 20
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Workload identity federation for the Claude API: Actions variables, not secrets
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           AGENT_MODEL: ${{ inputs.agent-model }}
           KIND: ${{ inputs.kind }}
           PACKAGE_ID: ${{ inputs.package-id }}
@@ -263,7 +271,26 @@ jobs:
           # its additions fail the gate, the release is published without them
           gaps=$(jq length gaps.json 2>/dev/null || echo 0)
           if [ "$status" -eq 0 ] && [ "$gaps" -gt 0 ]; then
-            if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "${AWS_REGION:-}" ]; then
+            # An empty credential variable still takes its place in the SDK's order, ahead of the rest
+            for name in ANTHROPIC_API_KEY ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID \
+                ANTHROPIC_SERVICE_ACCOUNT_ID ANTHROPIC_WORKSPACE_ID; do
+              if [ -z "${!name}" ]; then unset "$name"; fi
+            done
+            # A GitHub OIDC token to exchange for a Claude API token, fetched now since it's short-lived.
+            # Bounded, so a stalled request falls back to publishing without the agent
+            if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -n "${ANTHROPIC_FEDERATION_RULE_ID:-}" ] && [ -n "${ANTHROPIC_ORGANIZATION_ID:-}" ]; then
+              jwt=$(curl -sSf --max-time 30 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+                "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r '.value // empty') || jwt=
+              if [ -n "$jwt" ]; then
+                echo "::add-mask::$jwt"
+                export ANTHROPIC_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/anthropic-identity-token"
+                (umask 077 && printf '%s' "$jwt" > "$ANTHROPIC_IDENTITY_TOKEN_FILE")
+              else
+                echo "::warning::Couldn't get a GitHub OIDC token for the Claude API"
+              fi
+              unset jwt
+            fi
+            if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${ANTHROPIC_IDENTITY_TOKEN_FILE:-}" ] && [ -z "${AWS_REGION:-}" ]; then
               echo "::notice::No AI agent credentials; $gaps typeNames keep their gaps (see the summary)"
             # 15 minutes, inside the step's 20, so a stalled call fails here and the release still publishes
             elif ! timeout 900 node "$TOOLS/release-metadata/agent.mjs" --gaps gaps.json --document pepperdash-metadata.json \
