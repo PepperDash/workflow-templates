@@ -422,7 +422,7 @@ describe('AI agent gaps', () => {
     const { doc, report } = assembled();
     const gaps = findGaps({ doc, report, facts: extracted });
     assert.ok(validateAgentOutput(answer()));
-    const { doc: filled, filled: notes } = applyAgent({ doc, gaps, result: answer(), agent: 'claude-opus-5-5' });
+    const { doc: filled, report: filledReport, filled: notes } = applyAgent({ doc, report, gaps, result: answer(), agent: 'claude-opus-5-5' });
     const entry = filled.typeNames.testDevice;
     assert.equal(entry.label, 'Test Device');
     assert.equal(entry.description, 'A test device over TCP.');
@@ -438,8 +438,39 @@ describe('AI agent gaps', () => {
     assert.deepEqual(filled.generator, { script: doc.generator.script, prompt: '1', agent: 'claude-opus-5-5', reusedFrom: null });
     assert.ok(notes.includes('testDevice: 2 property descriptions'));
     assert.deepEqual(gate({ doc: filled, facts: extracted, formSidecar: null }).errors, []);
-    // The input document is untouched
+    // The report describes the filled document, so the summary doesn't list what the agent filled
+    const { sources, gaps: reportGaps } = filledReport.testDevice;
+    assert.equal(sources.descriptions.agent, 2);
+    assert.deepEqual(sources.descriptions.missing, ['displayDeviceKey', 'inputs']);
+    assert.equal(sources.routingPorts, 'code + agent');
+    assert.equal(sources.formMetadata, 'agent');
+    assert.ok(!reportGaps.some((g) => g.startsWith('routingPorts')));
+    assert.match(summarize({ doc: filled, report: filledReport, gateResult: { errors: [], warnings: [] }, changes: null, agent: { filled: notes } }),
+      /2 agent, 2 missing/);
+    // The inputs are untouched
     assert.equal(doc.typeNames.testDevice.label, undefined);
+    assert.equal(report.testDevice.sources.routingPorts, 'code (partial)');
+  });
+
+  it('offers reference properties inside dictionary values as form candidates', () => {
+    const dictionary = structuredClone(schema);
+    dictionary.$defs.propertiesConfig.properties.endpoints = {
+      $id: '#root/endpoints',
+      type: 'object',
+      additionalProperties: {
+        $id: '#root/endpoints/additionalProperties',
+        type: 'object',
+        properties: { displayDeviceKey: { $id: '#root/endpoints/additionalProperties/displayDeviceKey', type: 'string' } },
+      },
+    };
+    const dictFacts = { typeNames: { testDevice: facts({ schema: dictionary }) } };
+    const { doc, report } = assemble({ facts: dictFacts, baseline: null, formSidecar: null, release });
+    const gaps = findGaps({ doc, report, facts: dictFacts });
+    assert.deepEqual(gaps[0].formCandidates, ['displayDeviceKey', 'endpoints{}.displayDeviceKey']);
+    const result = answer({ formMetadata: [{ path: 'endpoints{}.displayDeviceKey', formElement: 'SelectInputText', dataset: 'devices' }] });
+    const { doc: filled } = applyAgent({ doc, report, gaps, result, agent: 'claude-opus-5-5' });
+    assert.equal(filled.typeNames.testDevice.formMetadata.propertyMetadata.properties.displayDeviceKey.schemaId,
+      '#root/endpoints/additionalProperties/displayDeviceKey');
   });
 
   it('leaves the document alone when the agent answers nothing useful', () => {

@@ -11,7 +11,7 @@
 // exits 1 on any failure, which the workflow treats as "publish without the agent". --dry-run
 // writes the request it would send instead of sending it.
 
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import Anthropic from '@anthropic-ai/sdk';
@@ -46,12 +46,13 @@ if (gaps.length === 0) {
 }
 const doc = JSON.parse(readFileSync(args.document, 'utf8'));
 
+/** The repo's C# files. Symbolic links are skipped, so nothing outside the checkout is read */
 function csFiles(dir, found = []) {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) {
-      if (!SKIP_DIRS.test(name)) csFiles(path, found);
-    } else if (name.endsWith('.cs')) {
+  for (const item of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, item.name);
+    if (item.isDirectory()) {
+      if (!SKIP_DIRS.test(item.name)) csFiles(path, found);
+    } else if (item.isFile() && item.name.endsWith('.cs')) {
       found.push(path);
     }
   }
@@ -61,6 +62,7 @@ function csFiles(dir, found = []) {
 /** The files declaring each gap's classes, plus the files of port constructions the extractor couldn't read */
 function sourcesFor(gaps) {
   const files = csFiles(args.repo).map((path) => ({ path, text: readFileSync(path, 'utf8') }));
+  const byRelativePath = new Map(files.map((f) => [relative(args.repo, f.path), f]));
   const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const names = [...new Set(gaps.flatMap((g) => [g.factory, g.deviceClass, g.configClass]).filter(Boolean))];
   const declares = names.map((n) => new RegExp(`\\b(class|record|struct)\\s+${escape(n.split('.').pop())}\\b`));
@@ -68,10 +70,11 @@ function sourcesFor(gaps) {
   for (const file of files) {
     if (declares.some((re) => re.test(file.text))) chosen.set(file.path, file.text);
   }
-  // Unresolved entries start with the file, relative to the repo: "src/Device.cs:42: new RoutingInputPort(...)"
+  // Unresolved entries start with the file, relative to the repo: "src/Device.cs:42: new RoutingInputPort(...)".
+  // They come from the build, so only names of files found above are used, never opened as given
   for (const entry of gaps.flatMap((g) => g.unresolvedPorts)) {
-    const path = join(args.repo, entry.split(':')[0]);
-    if (existsSync(path) && !chosen.has(path)) chosen.set(path, readFileSync(path, 'utf8'));
+    const file = byRelativePath.get(entry.split(':')[0]);
+    if (file && !chosen.has(file.path)) chosen.set(file.path, file.text);
   }
   return [...chosen].map(([path, text]) => ({ path: relative(args.repo, path), text }));
 }

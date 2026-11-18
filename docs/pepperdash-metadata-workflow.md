@@ -63,7 +63,7 @@ jobs:
    - Each config property's `description` is its `/// <summary>` in the code, otherwise the baseline's. Its `title` is the baseline's, otherwise one made from the property name (`warmupTimeMs` → "Warmup Time Ms"), since the code has nowhere to write one.
    - `label`, `controlMethods`, `controlPorts`, `deviceKind`, `catalog` and the other UI hints come from the baseline.
    - `formMetadata` comes from the repo's `.pepperdash/form-metadata.json`, otherwise the baseline. Each `schemaId` is pointed at the matching property's `$id` in this release's schema, so a sidecar written as `#root/propertiesConfig/x` still matches a schema that uses `#root/x`.
-4. **AI agent.** When something is still missing, the [AI agent](#ai-agent) fills it, and the document is assembled again with its answers. If the agent fails, or the result fails the gate, the first document is published with a warning.
+4. **AI agent.** When something is still missing, the [AI agent](#ai-agent) fills it, and the document is assembled again with its answers. If the agent fails or takes more than 15 minutes, or the result fails the gate, the first document is published with a warning.
 5. **Gate.** Any error fails the job before anything is published:
    - the document doesn't validate against the v1 schema
    - its typeNames differ from the factories' `TypeNames`
@@ -83,7 +83,7 @@ The code can't give everything Portal shows. After the document is assembled, `a
 - routing ports the extractor couldn't read (keys built in loops or helpers)
 - form hints, for properties named like references (`displayDeviceKey`, `roomKeys`, `audioOutputPort`), when the typeName has no `formMetadata` at all
 
-[`agent.mjs`](../tools/release-metadata/agent.mjs) sends Claude the gaps and the source files of each gap's factory, device and config classes, in one request with a structured answer and no tools: the model can't run anything or read other files. `assemble.mjs --agent` then takes only answers to real gaps. It never replaces anything from the code, a sidecar or the baseline, adds ports without changing existing ones, and ignores an answer that doesn't match its schema. The gate checks the result like any other document.
+[`agent.mjs`](../tools/release-metadata/agent.mjs) sends Claude the gaps and the source files of each gap's factory, device and config classes, in one request with a structured answer and no tools: the model can't run anything or read other files. Only regular `.cs` files inside the checkout are sent; symbolic links are skipped, and file names from the build's unresolved ports are only used when they match one of those files. `assemble.mjs --agent` then takes only answers to real gaps. It never replaces anything from the code, a sidecar or the baseline, adds ports without changing existing ones, and ignores an answer that doesn't match its schema. The gate checks the result like any other document.
 
 What the agent fills becomes part of the next release's baseline, so later releases only ask about new gaps, and a release with none makes no request. `generator.agent` names the model that answered and `generator.prompt` the prompt version, and the job summary lists what it filled.
 

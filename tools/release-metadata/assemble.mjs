@@ -94,9 +94,8 @@ const assembled = assemble({
     assets: readAssets(args['assets-dir']),
   },
 });
-const { report } = assembled;
-const gaps = findGaps({ doc: assembled.doc, report, facts });
-let doc = assembled.doc;
+const gaps = findGaps({ doc: assembled.doc, report: assembled.report, facts });
+let { doc, report } = assembled;
 let agent = null;
 const agentWarnings = [];
 if (args.agent) {
@@ -104,7 +103,7 @@ if (args.agent) {
   if (!answer?.result || !validateAgentOutput(answer.result)) {
     agentWarnings.push(`${args.agent} isn't a valid agent answer; nothing from it was used`);
   } else {
-    ({ doc, ...agent } = applyAgent({ doc, gaps, result: answer.result, agent: answer.agent }));
+    ({ doc, report, ...agent } = applyAgent({ doc, report, gaps, result: answer.result, agent: answer.agent }));
   }
 }
 const gateResult = gate({ doc, facts: facts ?? { typeNames: {} }, formSidecar });

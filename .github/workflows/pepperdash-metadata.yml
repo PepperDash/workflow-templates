@@ -265,7 +265,8 @@ jobs:
           if [ "$status" -eq 0 ] && [ "$gaps" -gt 0 ]; then
             if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "${AWS_REGION:-}" ]; then
               echo "::notice::No AI agent credentials; $gaps typeNames keep their gaps (see the summary)"
-            elif ! node "$TOOLS/release-metadata/agent.mjs" --gaps gaps.json --document pepperdash-metadata.json \
+            # 15 minutes, inside the step's 20, so a stalled call fails here and the release still publishes
+            elif ! timeout 900 node "$TOOLS/release-metadata/agent.mjs" --gaps gaps.json --document pepperdash-metadata.json \
                 --repo repo --out agent.json --model "$AGENT_MODEL"; then
               echo "::warning::The AI agent failed; publishing without its additions"
             elif node "$TOOLS/release-metadata/assemble.mjs" "${args[@]}" --agent agent.json \

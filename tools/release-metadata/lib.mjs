@@ -335,6 +335,10 @@ function referenceProperties(schema) {
   const isString = (p) => p?.type === 'string' || (p?.type === 'array' && p.items?.type === 'string');
   const walk = (node, path) => {
     if (node?.items && typeof node.items === 'object') walk(node.items, `${path}[]`);
+    // Dictionary<string, T> values, as the extractor writes them
+    if (node?.additionalProperties && typeof node.additionalProperties === 'object') {
+      walk(node.additionalProperties, `${path}{}`);
+    }
     for (const [name, property] of Object.entries(node?.properties ?? {})) {
       const propertyPath = path ? `${path}.${name}` : name;
       if (REFERENCE_NAME.test(name) && isString(property)) found.push(propertyPath);
@@ -448,10 +452,12 @@ export const validateAgentOutput = ajv.compile(AGENT_OUTPUT_SCHEMA);
 /**
  * Fills the gaps from the agent's answer and nothing else: a field the agent answers that wasn't a
  * gap, or a property path it invents, is ignored. Ports are only added (by name), never replaced.
- * Returns the new document and what was filled, as "typeName: field" strings.
+ * Returns the new document, the report updated to match it, and what was filled, as
+ * "typeName: field" strings.
  */
-export function applyAgent({ doc, gaps, result, agent }) {
+export function applyAgent({ doc, report = {}, gaps, result, agent }) {
   const out = structuredClone(doc);
+  const outReport = structuredClone(report);
   const filled = [];
   const answers = new Map((result?.typeNames ?? []).map((t) => [t.typeName, t]));
   for (const gap of gaps) {
@@ -459,6 +465,7 @@ export function applyAgent({ doc, gaps, result, agent }) {
     const entry = out.typeNames[gap.typeName];
     if (!answer || !entry) continue;
     const note = (field) => filled.push(`${gap.typeName}: ${field}`);
+    const sources = outReport[gap.typeName]?.sources ?? {};
 
     if (gap.label && answer.label?.trim()) {
       entry.label = answer.label.trim();
@@ -470,15 +477,24 @@ export function applyAgent({ doc, gaps, result, agent }) {
     }
 
     const wanted = new Set(gap.properties);
-    let described = 0;
+    const described = new Set();
     for (const { path, description } of answer.propertyDescriptions ?? []) {
       const node = wanted.has(path) ? schemaNodeAt(entry.schema, path) : undefined;
       if (node && !node.description && description.trim()) {
         node.description = description.trim();
-        described++;
+        described.add(path);
       }
     }
-    if (described) note(`${described} property description${described === 1 ? '' : 's'}`);
+    if (described.size) {
+      note(`${described.size} property description${described.size === 1 ? '' : 's'}`);
+      if (sources.descriptions) {
+        sources.descriptions = {
+          ...sources.descriptions,
+          agent: described.size,
+          missing: sources.descriptions.missing.filter((p) => !described.has(p)),
+        };
+      }
+    }
 
     if (gap.unresolvedPorts.length && answer.routingPorts) {
       const ports = { inputs: [...(entry.routingPorts?.inputs ?? [])], outputs: [...(entry.routingPorts?.outputs ?? [])] };
@@ -495,6 +511,9 @@ export function applyAgent({ doc, gaps, result, agent }) {
       if (added) {
         entry.routingPorts = ports;
         note(`${added} routing port${added === 1 ? '' : 's'}`);
+        sources.routingPorts = 'code + agent';
+        const gapList = outReport[gap.typeName]?.gaps;
+        if (gapList) outReport[gap.typeName].gaps = gapList.filter((g) => !g.startsWith('routingPorts'));
       }
     }
 
@@ -510,11 +529,12 @@ export function applyAgent({ doc, gaps, result, agent }) {
       if (Object.keys(properties).length) {
         entry.formMetadata = { propertyMetadata: { properties } };
         note(`formMetadata for ${Object.keys(properties).join(', ')}`);
+        sources.formMetadata = 'agent';
       }
     }
   }
   if (filled.length) out.generator = { ...out.generator, prompt: PROMPT_VERSION, agent };
-  return { doc: out, filled };
+  return { doc: out, report: outReport, filled };
 }
 
 function describeErrors(errors) {
@@ -640,7 +660,9 @@ export function summarize({ doc, report, gateResult, changes, agent }) {
     for (const typeName of typeNames) {
       const { sources, gaps } = report[typeName];
       const d = sources.descriptions;
-      const descriptions = d ? `${d.code} code, ${d.baseline} baseline, ${d.missing.length} missing` : '–';
+      const descriptions = d
+        ? `${d.code} code, ${d.baseline} baseline, ${d.agent ? `${d.agent} agent, ` : ''}${d.missing.length} missing`
+        : '–';
       lines.push(`| \`${typeName}\` | ${sources.schema} | ${descriptions} | ${sources.interfaces} | ${sources.routingPorts} | ${sources.formMetadata ?? '–'} | ${gaps.join(', ') || '–'} |`);
     }
     lines.push('');
