@@ -275,9 +275,10 @@ jobs:
                 ANTHROPIC_SERVICE_ACCOUNT_ID ANTHROPIC_WORKSPACE_ID; do
               if [ -z "${!name}" ]; then unset "$name"; fi
             done
-            # A GitHub OIDC token to exchange for a Claude API token, fetched now since it's short-lived
+            # A GitHub OIDC token to exchange for a Claude API token, fetched now since it's short-lived.
+            # Bounded, so a stalled request falls back to publishing without the agent
             if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -n "${ANTHROPIC_FEDERATION_RULE_ID:-}" ] && [ -n "${ANTHROPIC_ORGANIZATION_ID:-}" ]; then
-              jwt=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              jwt=$(curl -sSf --max-time 30 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
                 "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r '.value // empty') || jwt=
               if [ -n "$jwt" ]; then
                 echo "::add-mask::$jwt"
