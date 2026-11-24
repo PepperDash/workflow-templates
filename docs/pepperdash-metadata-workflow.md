@@ -10,7 +10,7 @@ The 4-series build (`essentialsplugins-4Series-builds.yml`) and the React build 
 
 | Build | `kind` | Set with its `metadataKind` input |
 |---|---|---|
-| `essentialsplugins-4Series-builds.yml` | `essentials` for PepperDash/Essentials, otherwise `plugin` | `plugin`, `essentials`, or `none` to skip |
+| `essentialsplugins-4Series-builds.yml` | `essentials` for PepperDash/Essentials (package ID `PepperDashEssentials`), otherwise `plugin` | `plugin`, `essentials`, or `none` to skip |
 | `react-app-build.yml` | `userInterface` | `userInterface`, `touchpanelWrapper`, or `none` to skip |
 
 **Permissions.** This workflow's jobs ask for `id-token: write` and `contents: write`, and GitHub checks that before the run starts. A caller job that doesn't set `permissions:` gets both, as long as the repo's default workflow permissions are read and write. A caller that sets `permissions:` on its build job, or a repo whose default is read-only, must grant both, or the **whole build fails to start**, not only the metadata:

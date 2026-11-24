@@ -345,3 +345,5 @@ jobs:
     with:
       tag: ${{ inputs.tag }}
       kind: ${{ inputs.metadataKind != '' && inputs.metadataKind || (github.repository == 'PepperDash/Essentials' && 'essentials' || 'plugin') }}
+      # Essentials' solution holds several packages, and the first <PackageId> found is Core's
+      package-id: ${{ github.repository == 'PepperDash/Essentials' && 'PepperDashEssentials' || '' }}
