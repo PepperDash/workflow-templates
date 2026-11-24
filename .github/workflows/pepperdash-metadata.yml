@@ -263,6 +263,7 @@ jobs:
           if [ -f facts.json ]; then args+=(--facts facts.json); fi
           if [ -n "$BASELINE" ]; then args+=(--baseline "$BASELINE"); fi
           if [ -f repo/.pepperdash/form-metadata.json ]; then args+=(--form-sidecar repo/.pepperdash/form-metadata.json); fi
+          if [ -f repo/.pepperdash/type-names.json ]; then args+=(--type-names-sidecar repo/.pepperdash/type-names.json); fi
           status=0
           node "$TOOLS/release-metadata/assemble.mjs" "${args[@]}" \
             --out pepperdash-metadata.json --summary summary.md --gaps gaps.json || status=$?

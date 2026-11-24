@@ -62,17 +62,44 @@ jobs:
    - `schema`, `interfaces` and `routingPorts` come from the code. Where the code gives nothing (a schema it couldn't build, ports whose keys it couldn't read), the baseline's value is kept.
    - Each config property's `description` is its `/// <summary>` in the code, otherwise the baseline's. Its `title` is the baseline's, otherwise one made from the property name (`warmupTimeMs` → "Warmup Time Ms"), since the code has nowhere to write one.
    - `label`, `controlMethods`, `controlPorts`, `deviceKind`, `catalog` and the other UI hints come from the baseline.
-   - `formMetadata` comes from the repo's `.pepperdash/form-metadata.json`, otherwise the baseline. Each `schemaId` is pointed at the matching property's `$id` in this release's schema, so a sidecar written as `#root/propertiesConfig/x` still matches a schema that uses `#root/x`.
+   - `formMetadata` comes from the repo's `.pepperdash/form-metadata.json`, otherwise the baseline. Each `schemaId` is pointed at the matching property's `$id` in this release's schema, so a sidecar written as `#root/propertiesConfig/x` still matches a schema that uses `#root/x`. A path is also walked through the schema: through arrays whose `items` it leaves out, and through dictionaries (`Dictionary<string, T>`), whether it names a key (`relays/raise/deviceKey`), `patternProperties` or `additionalProperties`.
+   - A baseline `formMetadata` property that still points at nothing is left out, with a warning: nobody in the repo wrote it, so it shouldn't stop a release. Adding it to `.pepperdash/form-metadata.json`, pointed at a property this release has, brings it back.
+   - typeNames declared in the repo's [`.pepperdash/type-names.json`](#declared-typenames) are added next to those from the code.
 4. **AI agent.** When something is still missing, the [AI agent](#ai-agent) fills it, and the document is assembled again with its answers. If the agent fails or takes more than 15 minutes, or the result fails the gate, the first document is published with a warning.
 5. **Gate.** Any error fails the job before anything is published:
    - the document doesn't validate against the v1 schema
-   - its typeNames differ from the factories' `TypeNames`
+   - its typeNames differ from the factories' `TypeNames` plus those declared in `.pepperdash/type-names.json`
+   - `.pepperdash/type-names.json` doesn't validate against [its schema](../schemas/pepperdash-type-names.v1.schema.json), or declares a typeName a factory also has (in any case)
    - a `.pepperdash/form-metadata.json` typeName isn't in the release (a key that differs only in case is a warning, since Essentials ignores case)
-   - a `formMetadata` `schemaId` matches no property in this release's schema, for example because the property was renamed
+   - a `formMetadata` `schemaId` from `.pepperdash/form-metadata.json` or `.pepperdash/type-names.json` matches no property in this release's schema, for example because the property was renamed
 6. Attaches `pepperdash-metadata.json` to the release, replacing an earlier copy.
 7. Registers the release with each UDM in `PEPPERDASH_UDM_URLS`, uploads its files, and marks it complete.
 
 The job summary lists, for each typeName, where each field came from and what's missing, including the config properties that have no description anywhere, then what changed since the baseline.
+
+## Declared typeNames
+
+Some typeNames a config accepts aren't created by any factory, so the code can't show them: the control systems Essentials runs on (`rmc4`, `cp4`) are the main example. A repo declares these in `.pepperdash/type-names.json`, each with its whole metadata, in the same shape as a typeName in `pepperdash-metadata.json`:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/PepperDash/workflow-templates/main/schemas/pepperdash-type-names.v1.schema.json",
+  "typeNames": {
+    "rmc4": {
+      "label": "RMC4",
+      "description": "RMC4 Room Media Controller",
+      "interfaces": ["IControlSystem"],
+      "deviceKind": "device",
+      "schema": { "$schema": "http://json-schema.org/draft-07/schema#", "$defs": { "propertiesConfig": { "$id": "#root", "type": "object", "properties": {} } } },
+      "catalog": { /* category and models, as in pepperdash-metadata.json */ }
+    }
+  }
+}
+```
+
+- The declaration is the entry. The baseline only fills fields it leaves out, and `formMetadata` still comes from `.pepperdash/form-metadata.json` first.
+- The AI agent isn't asked about declared typeNames: there are no classes for it to read.
+- A typeName that a factory creates must not be declared; the gate fails if it is, so the two can't disagree.
 
 ## AI agent
 
@@ -123,7 +150,8 @@ python3 tools/metadata-extract/build_and_extract.py <repo> facts.json --build-js
 cd tools/release-metadata && npm ci && npm test
 node assemble.mjs --package-id <id> --tag <tag> --repo-url https://github.com/<owner>/<repo> \
   --commit-sha <sha> --published-at <utc> --assets-dir <dir> --facts facts.json [--baseline <file>] \
-  [--form-sidecar <repo>/.pepperdash/form-metadata.json] --gaps gaps.json
+  [--form-sidecar <repo>/.pepperdash/form-metadata.json] [--type-names-sidecar <repo>/.pepperdash/type-names.json] \
+  --gaps gaps.json
 
 # --dry-run writes the request instead of sending it; without it, needs ANTHROPIC_API_KEY or AWS credentials
 node agent.mjs --gaps gaps.json --document pepperdash-metadata.json --repo <repo> --dry-run request.json

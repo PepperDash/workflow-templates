@@ -9,19 +9,21 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 
-export const SCRIPT_VERSION = 'pepperdash-metadata@0.1.0';
+export const SCRIPT_VERSION = 'pepperdash-metadata@0.2.0';
 
 const schemasDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schemas');
 const loadSchema = (name) => JSON.parse(readFileSync(join(schemasDir, `${name}.schema.json`), 'utf8'));
 const metadataSchema = loadSchema('pepperdash-metadata.v1');
 const formMetadataSchema = loadSchema('pepperdash-form-metadata.v1');
 const catalogSchema = loadSchema('pepperdash-catalog.v1');
+const typeNamesSchema = loadSchema('pepperdash-type-names.v1');
 
 // The spec uses no formats of its own; the schemas they guard are checked by shape
 const ajv = new Ajv({ allErrors: true, allowUnionTypes: true, validateFormats: false });
-ajv.addSchema([metadataSchema, formMetadataSchema, catalogSchema]);
+ajv.addSchema([metadataSchema, formMetadataSchema, catalogSchema, typeNamesSchema]);
 export const validateMetadata = ajv.getSchema(metadataSchema.$id);
 export const validateFormMetadataSidecar = ajv.getSchema(formMetadataSchema.$id);
+export const validateTypeNamesSidecar = ajv.getSchema(typeNamesSchema.$id);
 
 export const METADATA_SCHEMA_URL = metadataSchema.$id;
 export const ASSET_TYPES = ['cpz', 'cplz', 'ch5z', 'zip'];
@@ -117,10 +119,48 @@ function idsByPath(ids, options) {
   return byPath;
 }
 
+const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+/** A dictionary's value schema: additionalProperties, else the first patternProperties entry */
+function dictionaryValue(node) {
+  if (isObject(node?.additionalProperties)) return node.additionalProperties;
+  const patterns = Object.values(node?.patternProperties ?? {});
+  return isObject(patterns[0]) ? patterns[0] : undefined;
+}
+
+/** One path segment down from a schema node, or undefined */
+function stepInto(node, segment) {
+  if (!isObject(node)) return undefined;
+  if (segment === 'items') return isObject(node.items) ? node.items : undefined;
+  if (segment === 'additionalproperties' || segment === 'patternproperties') return dictionaryValue(node);
+  const property = Object.entries(node.properties ?? {}).find(([name]) => name.toLowerCase() === segment)?.[1];
+  if (isObject(property)) return property;
+  // A path that leaves out an array's "items"
+  if (isObject(node.items)) return stepInto(node.items, segment);
+  // A dictionary key: the mocks named the keys a dictionary is expected to hold (relays/raise),
+  // where a schema built from a Dictionary<string, T> only describes its values
+  return dictionaryValue(node);
+}
+
+/**
+ * The $id of the schema node a path reaches when it's walked through the schema: through arrays
+ * whose "items" the path leaves out, and through dictionaries, whatever the path calls their values
+ * (a key, "patternProperties" or "additionalProperties"). Undefined when the node has no $id.
+ */
+function walkToId(schema, id) {
+  let node = schema?.$defs?.propertiesConfig;
+  for (const segment of idPath(id).split('/').filter(Boolean)) {
+    node = stepInto(node, segment);
+    if (!node) return undefined;
+  }
+  return typeof node?.$id === 'string' ? node.$id : undefined;
+}
+
 /**
  * Points each formMetadata schemaId at the $id this release's schema actually uses for that
  * property, so a sidecar written against one $id convention keeps working when the schema uses
- * another. A schemaId that matches nothing is left as it is, for the gate to report.
+ * another: first by path, then by walking the schema through arrays and dictionaries. A schemaId
+ * that matches nothing is left as it is, for the caller or the gate to deal with.
  */
 export function resolveSchemaIds(formMetadata, schema) {
   const properties = formMetadata?.propertyMetadata?.properties;
@@ -138,7 +178,9 @@ export function resolveSchemaIds(formMetadata, schema) {
     }
     const actual = ids.has(meta.schemaId)
       ? meta.schemaId
-      : exact.get(idPath(meta.schemaId)) ?? loose.get(idPath(meta.schemaId, { loose: true }));
+      : exact.get(idPath(meta.schemaId)) ??
+        loose.get(idPath(meta.schemaId, { loose: true })) ??
+        walkToId(schema, meta.schemaId);
     if (actual && actual !== meta.schemaId) rewrites.push(`${name}: ${meta.schemaId} → ${actual}`);
     resolved[name] = actual ? { ...meta, schemaId: actual } : meta;
   }
@@ -237,18 +279,65 @@ export function assembleTypeName(facts, baseline, formSidecarEntry) {
     if (baseline?.[field] !== undefined) entry[field] = baseline[field];
   }
 
-  const formMetadata = formSidecarEntry ?? baseline?.formMetadata;
-  if (formMetadata) {
-    const { formMetadata: resolved, rewrites } = resolveSchemaIds(formMetadata, entry.schema);
-    entry.formMetadata = resolved;
-    sources.formMetadata = formSidecarEntry ? 'sidecar' : 'baseline';
-    if (rewrites.length) sources.schemaIdRewrites = rewrites;
-  }
+  addFormMetadata(entry, sources, [
+    ['sidecar', formSidecarEntry],
+    ['baseline', baseline?.formMetadata],
+  ]);
 
   const description = facts.description ?? baseline?.description;
   if (description) entry.description = description;
 
   return { entry, sources, gaps };
+}
+
+/**
+ * Sets the entry's formMetadata from the first candidate that has one, its schemaIds pointed at the
+ * entry's schema. Properties inherited from the baseline that still point at nothing are dropped and
+ * listed in sources.droppedFormMetadata: nobody in the repo wrote them, so they shouldn't stop a
+ * release, and a sidecar entry brings them back. Anything else that points at nothing stays for the
+ * gate to fail on.
+ */
+function addFormMetadata(entry, sources, candidates) {
+  const [source, formMetadata] = candidates.find(([, value]) => value) ?? [];
+  if (!formMetadata) return;
+  let { formMetadata: resolved, rewrites } = resolveSchemaIds(formMetadata, entry.schema);
+  sources.formMetadata = source;
+  if (rewrites.length) sources.schemaIdRewrites = rewrites;
+  const properties = resolved.propertyMetadata?.properties;
+  if (source === 'baseline' && properties) {
+    const ids = schemaIds(entry.schema);
+    const dropped = Object.entries(properties).filter(([, meta]) => !ids.has(meta?.schemaId));
+    if (dropped.length) {
+      sources.droppedFormMetadata = dropped.map(([name, meta]) => `${name} (${meta?.schemaId})`);
+      const kept = Object.fromEntries(Object.entries(properties).filter(([, meta]) => ids.has(meta?.schemaId)));
+      resolved = { ...resolved, propertyMetadata: { ...resolved.propertyMetadata, properties: kept } };
+      if (!Object.keys(kept).length && Object.keys(resolved).length === 1 && Object.keys(resolved.propertyMetadata).length === 1) {
+        delete sources.formMetadata;
+        return;
+      }
+    }
+  }
+  entry.formMetadata = resolved;
+}
+
+/**
+ * A typeName the repo declares in .pepperdash/type-names.json because no factory creates it (the
+ * control systems Essentials runs on, say). The declaration is the whole entry; formMetadata still
+ * comes from the form metadata sidecar first, and the baseline fills what the declaration leaves out.
+ */
+export function assembleDeclaredTypeName(declared, baseline, formSidecarEntry) {
+  const { formMetadata: declaredForm, ...rest } = structuredClone(declared);
+  const entry = { ...rest };
+  const sources = { declared: true, schema: 'declared', interfaces: 'declared', routingPorts: 'declared' };
+  for (const field of ['label', 'description', ...CARRIED_FIELDS]) {
+    if (entry[field] === undefined && baseline?.[field] !== undefined) entry[field] = baseline[field];
+  }
+  addFormMetadata(entry, sources, [
+    ['sidecar', formSidecarEntry],
+    ['declared', declaredForm],
+    ['baseline', baseline?.formMetadata],
+  ]);
+  return { entry, sources, gaps: [] };
 }
 
 /**
@@ -266,7 +355,7 @@ function lookup(entries, typeName) {
  * The whole document. `release` holds what comes from GitHub and the caller: kind, packageId,
  * label, tag, repoUrl, commitSha, publishedAt and assets.
  */
-export function assemble({ facts, baseline, formSidecar, release }) {
+export function assemble({ facts, baseline, formSidecar, typeNamesSidecar, release }) {
   const version = versionOf(release.tag);
   const doc = {
     $schema: METADATA_SCHEMA_URL,
@@ -300,6 +389,17 @@ export function assemble({ facts, baseline, formSidecar, release }) {
     for (const typeName of Object.keys(facts.typeNames).sort()) {
       const { entry, sources, gaps } = assembleTypeName(
         facts.typeNames[typeName],
+        lookup(baseline?.typeNames, typeName),
+        lookup(formSidecar?.typeNames, typeName),
+      );
+      doc.typeNames[typeName] = entry;
+      report[typeName] = { sources, gaps };
+    }
+    // A declaration of a typeName a factory also has is the gate's to report; the code's wins
+    for (const typeName of Object.keys(typeNamesSidecar?.typeNames ?? {}).sort()) {
+      if (lookup(facts.typeNames, typeName)) continue;
+      const { entry, sources, gaps } = assembleDeclaredTypeName(
+        typeNamesSidecar.typeNames[typeName],
         lookup(baseline?.typeNames, typeName),
         lookup(formSidecar?.typeNames, typeName),
       );
@@ -359,6 +459,8 @@ export function findGaps({ doc, report, facts }) {
   for (const [typeName, entry] of Object.entries(doc.typeNames)) {
     const typeFacts = facts?.typeNames?.[typeName] ?? {};
     const sources = report[typeName]?.sources ?? {};
+    // A declared typeName has no classes for the agent to read; the declaration is the whole entry
+    if (sources.declared) continue;
     const gap = {
       typeName,
       factory: typeFacts.factory ?? null,
@@ -545,7 +647,7 @@ function describeErrors(errors) {
 }
 
 /** The checks that must pass before anything is published. Errors fail the build. */
-export function gate({ doc, facts, formSidecar }) {
+export function gate({ doc, facts, formSidecar, typeNamesSidecar, report = {} }) {
   const errors = [];
   // What the extractor couldn't read (a property left out for a missing reference, say)
   const warnings = (facts.warnings ?? []).map((w) => `metadata-extract: ${w}`);
@@ -555,9 +657,15 @@ export function gate({ doc, facts, formSidecar }) {
   }
 
   if (!NO_DEVICE_KINDS.includes(doc.kind)) {
-    const expected = Object.keys(facts.typeNames).sort().join(',');
+    const factoryNames = Object.keys(facts.typeNames);
+    const declaredNames = Object.keys(typeNamesSidecar?.typeNames ?? {});
+    for (const typeName of declaredNames) {
+      const factory = factoryNames.find((t) => t.toLowerCase() === typeName.toLowerCase());
+      if (factory) errors.push(`.pepperdash/type-names.json: ${typeName} is also a factory TypeName (${factory}); remove the declaration`);
+    }
+    const expected = [...factoryNames, ...declaredNames.filter((d) => !lookup(facts.typeNames, d))].sort().join(',');
     const actual = Object.keys(doc.typeNames).sort().join(',');
-    if (expected !== actual) errors.push("typeNames differ from the factories' TypeNames");
+    if (expected !== actual) errors.push("typeNames differ from the factories' TypeNames and .pepperdash/type-names.json");
 
     // An empty extraction would otherwise publish, and become the next release's baseline
     const extracted = Object.entries(facts.typeNames);
@@ -568,6 +676,16 @@ export function gate({ doc, facts, formSidecar }) {
       errors.push("metadata-extract couldn't read the built assemblies: no typeName has interfaces or a schema");
     } else if (unread.length) {
       warnings.push(`metadata-extract couldn't read the interfaces of ${unread.sort().join(', ')}`);
+    }
+  }
+
+  if (typeNamesSidecar && !validateTypeNamesSidecar(typeNamesSidecar)) {
+    errors.push(...describeErrors(validateTypeNamesSidecar.errors).map((e) => `.pepperdash/type-names.json: ${e}`));
+  }
+
+  for (const [typeName, { sources }] of Object.entries(report)) {
+    if (sources?.droppedFormMetadata?.length) {
+      warnings.push(`${typeName}: left out the baseline's formMetadata for ${sources.droppedFormMetadata.join(', ')}, which points at nothing in this release's schema; add it to .pepperdash/form-metadata.json to keep it`);
     }
   }
 

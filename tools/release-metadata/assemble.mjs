@@ -1,6 +1,7 @@
 // node assemble.mjs --kind plugin --package-id <id> --tag <tag> --repo-url <url> --commit-sha <sha>
 //                   --published-at <utc> --assets-dir <dir> [--facts facts.json] [--baseline <file>]
-//                   [--form-sidecar <file>] [--label <label>] [--out pepperdash-metadata.json]
+//                   [--form-sidecar <file>] [--type-names-sidecar <file>] [--label <label>]
+//                   [--out pepperdash-metadata.json]
 //                   [--summary summary.md] [--gaps gaps.json] [--agent agent.json]
 //
 // Writes the document and a Markdown summary, then exits 1 if the gate fails. The document is
@@ -38,6 +39,7 @@ const { values: args } = parseArgs({
     facts: { type: 'string' },
     baseline: { type: 'string' },
     'form-sidecar': { type: 'string' },
+    'type-names-sidecar': { type: 'string' },
     out: { type: 'string', default: 'pepperdash-metadata.json' },
     summary: { type: 'string', default: 'summary.md' },
     gaps: { type: 'string' },
@@ -77,12 +79,14 @@ function readAssets(dir) {
 const facts = readJson(args.facts);
 const baseline = readJson(args.baseline);
 const formSidecar = readJson(args['form-sidecar']);
+const typeNamesSidecar = readJson(args['type-names-sidecar']);
 const repoUrl = args['repo-url'].replace(/\.git$/, '');
 
 const assembled = assemble({
   facts,
   baseline,
   formSidecar,
+  typeNamesSidecar,
   release: {
     kind: args.kind,
     packageId: args['package-id'],
@@ -106,7 +110,7 @@ if (args.agent) {
     ({ doc, report, ...agent } = applyAgent({ doc, report, gaps, result: answer.result, agent: answer.agent }));
   }
 }
-const gateResult = gate({ doc, facts: facts ?? { typeNames: {} }, formSidecar });
+const gateResult = gate({ doc, facts: facts ?? { typeNames: {} }, formSidecar, typeNamesSidecar, report });
 gateResult.warnings.push(...agentWarnings);
 
 writeFileSync(args.out, JSON.stringify(doc, null, 2) + '\n');

@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/PepperDash/workflow-templates/main/schemas/pepperdash-type-names.v1.schema.json",
+  "title": "PepperDash declared typeNames",
+  "description": ".pepperdash/type-names.json in an Essentials or plugin repo: typeNames the config accepts that no factory creates, such as the control systems Essentials runs on. Each entry is the typeName's whole metadata. CI adds them to pepperdash-metadata.json next to the typeNames it reads from the code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["typeNames"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "typeNames": {
+      "type": "object",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": {
+        "$ref": "pepperdash-metadata.v1.schema.json#/definitions/typeNameMetadata"
+      }
+    }
+  }
+}

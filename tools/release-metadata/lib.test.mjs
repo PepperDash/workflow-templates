@@ -488,3 +488,122 @@ describe('AI agent gaps', () => {
     assert.equal(validateAgentOutput(badDataset), false);
   });
 });
+
+describe('schemaIds through dictionaries', () => {
+  // Shaped like the extractor's ScreenLiftController and EssentialsRoomCombiner schemas
+  const schema = {
+    $defs: {
+      propertiesConfig: {
+        properties: {
+          relays: {
+            $id: '#root/relays',
+            type: 'object',
+            additionalProperties: {
+              $id: '#root/relays/additionalProperties',
+              type: 'object',
+              properties: { deviceKey: { $id: '#root/relays/additionalProperties/deviceKey', type: 'string' } },
+            },
+          },
+          scenarios: {
+            $id: '#root/scenarios',
+            type: 'array',
+            items: {
+              $id: '#root/scenarios/items',
+              properties: { uiMap: { $id: '#root/scenarios/items/uiMap', type: 'object', additionalProperties: { type: 'string' } } },
+            },
+          },
+        },
+      },
+    },
+  };
+  const form = (properties) => ({ propertyMetadata: { properties } });
+  const select = (schemaId) => ({ schemaId, formElement: 'SelectInputText', items: { dataset: 'devices' } });
+
+  it("walks a dictionary key the mocks named to the dictionary's values", () => {
+    const { formMetadata } = resolveSchemaIds(
+      form({ raise: select('#root/propertiesConfig/relays/raise/deviceKey') }), schema);
+    assert.equal(formMetadata.propertyMetadata.properties.raise.schemaId, '#root/relays/additionalProperties/deviceKey');
+  });
+
+  it('reads patternProperties as the values of a dictionary, and leaves out an unnamed $id', () => {
+    const { formMetadata } = resolveSchemaIds(
+      form({ map: select('#root/propertiesConfig/scenarios/uiMap/patternProperties') }), schema);
+    // The extractor gives a string dictionary's values no $id, so there's nothing to point at
+    assert.equal(formMetadata.propertyMetadata.properties.map.schemaId, '#root/propertiesConfig/scenarios/uiMap/patternProperties');
+  });
+
+  const extracted = { typeNames: { lift: facts({ schema }) } };
+
+  it("drops the baseline's formMetadata that points at nothing, with a warning", () => {
+    const baseline = {
+      typeNames: {
+        lift: {
+          formMetadata: form({
+            raise: select('#root/propertiesConfig/relays/raise/deviceKey'),
+            map: select('#root/propertiesConfig/scenarios/uiMap/patternProperties'),
+          }),
+        },
+      },
+    };
+    const { doc, report } = assemble({ facts: extracted, baseline, formSidecar: null, release });
+    assert.deepEqual(Object.keys(doc.typeNames.lift.formMetadata.propertyMetadata.properties), ['raise']);
+    const { errors, warnings } = gate({ doc, facts: extracted, formSidecar: null, report });
+    assert.deepEqual(errors, []);
+    assert.match(warnings[0], /lift: left out the baseline's formMetadata for map/);
+  });
+
+  it('drops formMetadata altogether when nothing in it is left', () => {
+    const baseline = { typeNames: { lift: { formMetadata: form({ map: select('#root/gone') }) } } };
+    const { doc } = assemble({ facts: extracted, baseline, formSidecar: null, release });
+    assert.equal(doc.typeNames.lift.formMetadata, undefined);
+  });
+
+  it("still fails on the repo's own sidecar when it points at nothing", () => {
+    const formSidecar = { typeNames: { lift: form({ map: select('#root/gone') }) } };
+    const { doc, report } = assemble({ facts: extracted, baseline: null, formSidecar, release });
+    assert.match(gate({ doc, facts: extracted, formSidecar, report }).errors[0], /points at #root\/gone/);
+  });
+});
+
+describe('declared typeNames', () => {
+  const extracted = { typeNames: { testDevice: facts() } };
+  const processor = { label: 'RMC4', interfaces: ['IControlSystem'], schema: schemaWith('host') };
+  const typeNamesSidecar = { typeNames: { rmc4: processor } };
+
+  it('adds them next to the factory typeNames, and passes the gate', () => {
+    const { doc, report } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar, release });
+    assert.deepEqual(Object.keys(doc.typeNames).sort(), ['rmc4', 'testDevice']);
+    assert.deepEqual(doc.typeNames.rmc4, processor);
+    assert.equal(report.rmc4.sources.declared, true);
+    assert.deepEqual(gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar, report }), { errors: [], warnings: [] });
+  });
+
+  it('asks the agent about nothing for them', () => {
+    const { doc, report } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar, release });
+    assert.ok(!findGaps({ doc, report, facts: extracted }).some((g) => g.typeName === 'rmc4'));
+  });
+
+  it("fills what the declaration leaves out from the baseline, and takes the form sidecar's formMetadata", () => {
+    const baseline = { typeNames: { RMC4: { description: 'From the baseline', label: 'Old label' } } };
+    const formSidecar = { typeNames: { rmc4: formEntry('#root/host') } };
+    const { doc } = assemble({ facts: extracted, baseline, formSidecar, typeNamesSidecar, release });
+    assert.equal(doc.typeNames.rmc4.label, 'RMC4');
+    assert.equal(doc.typeNames.rmc4.description, 'From the baseline');
+    assert.equal(doc.typeNames.rmc4.formMetadata.propertyMetadata.properties.host.schemaId, '#root/host');
+  });
+
+  it('fails a declaration of a factory typeName, in any case', () => {
+    const sidecar = { typeNames: { TestDevice: processor } };
+    const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar: sidecar, release });
+    assert.equal(doc.typeNames.TestDevice, undefined);
+    const { errors } = gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar: sidecar });
+    assert.match(errors[0], /TestDevice is also a factory TypeName \(testDevice\)/);
+  });
+
+  it('fails a declaration the schema rejects', () => {
+    const sidecar = { typeNames: { rmc4: { label: 'RMC4' } } };
+    const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar: sidecar, release });
+    const { errors } = gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar: sidecar });
+    assert.ok(errors.some((e) => e.startsWith('.pepperdash/type-names.json:')));
+  });
+});
