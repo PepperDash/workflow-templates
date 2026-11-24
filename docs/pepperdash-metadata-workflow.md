@@ -47,25 +47,66 @@ For a repo that doesn't use those builds (the touchpanel wrapper app has its own
 
 ## Regenerating and withdrawing
 
-These run from a workflow in the repo itself, on its default branch. To regenerate an existing release's metadata (for example one released before this workflow existed), add a `workflow_dispatch` trigger with a `tag` input that calls this workflow the same way.
+A workflow in the repo itself regenerates or withdraws an existing release. Add this as `.github/workflows/pepperdash-metadata-caller.yml`:
 
-To withdraw a release from Portal when its GitHub release is deleted:
+- **A manual run** takes a `tag` and a `mode`. `publish` regenerates that release's metadata and registers it again, for example for a release made before this workflow existed. `withdraw` removes the release from Portal's catalog. GitHub only offers a manual run once the file is on the default branch.
+- **Deleting a GitHub release** withdraws it from Portal. GitHub runs this file from the deleted release's tagged commit, not the default branch, so this only works for releases tagged after the file was added. Withdraw older releases with a manual run.
+
+A withdrawn release's files and metadata stay in Portal, so configs that use it still resolve.
 
 ```yaml
+name: PepperDash Release Metadata
+
+# Regenerates the metadata for an existing release or withdraws it from Portal (a manual run, which
+# GitHub only offers once this file is on the default branch), and withdraws a release from Portal
+# when its GitHub release is deleted. A deleted release runs this file from its tagged commit, so it
+# only withdraws releases tagged after this file was added; withdraw older ones with a manual run.
+# New releases get their metadata from the build workflow.
+
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag, e.g. v4.0.0-feature-v3-migration.5'
+        required: true
+        type: string
+      mode:
+        description: 'publish regenerates and registers the metadata; withdraw removes the release from Portal'
+        required: true
+        type: choice
+        options: [publish, withdraw]
+        default: publish
   release:
     types: [deleted]
 
 jobs:
-  withdraw:
+  metadata:
+    if: github.event_name == 'workflow_dispatch'
     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
     permissions:
-      contents: read
+      contents: write   # attach pepperdash-metadata.json to the release
+      id-token: write   # GitHub OIDC tokens for UDM and the AI agent
+    secrets: inherit    # ANTHROPIC_API_KEY for the AI agent, only if the org doesn't use workload identity federation
+    with:
+      tag: ${{ inputs.tag }}
+      mode: ${{ inputs.mode }}
+
+  withdraw:
+    if: github.event_name == 'release'
+    uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
+    # GitHub checks every job in the called workflow against these before the run starts, and its
+    # publish job asks for contents: write, even though only its withdraw job runs here
+    permissions:
+      contents: write
       id-token: write
     with:
       tag: ${{ github.event.release.tag_name }}
       mode: withdraw
 ```
+
+The `withdraw` job needs `contents: write` although it only reads. GitHub checks every job in the called workflow (`publish` asks for `contents: write`) against the caller's permissions before the run starts, whatever the `if:` conditions say. A read-only grant stops every run of the file, manual ones included.
+
+The example is for a plugin. For Essentials, add `kind: essentials` and `package-id: PepperDashEssentials` under both jobs' `with:`; for a user interface or the touchpanel wrapper, add `kind: userInterface` or `kind: touchpanelWrapper`.
 
 ## Inputs
 
