@@ -488,3 +488,193 @@ describe('AI agent gaps', () => {
     assert.equal(validateAgentOutput(badDataset), false);
   });
 });
+
+describe('schemaIds through dictionaries', () => {
+  // Shaped like the extractor's ScreenLiftController and EssentialsRoomCombiner schemas
+  const schema = {
+    $defs: {
+      propertiesConfig: {
+        properties: {
+          relays: {
+            $id: '#root/relays',
+            type: 'object',
+            additionalProperties: {
+              $id: '#root/relays/additionalProperties',
+              type: 'object',
+              properties: { deviceKey: { $id: '#root/relays/additionalProperties/deviceKey', type: 'string' } },
+            },
+          },
+          scenarios: {
+            $id: '#root/scenarios',
+            type: 'array',
+            items: {
+              $id: '#root/scenarios/items',
+              properties: { uiMap: { $id: '#root/scenarios/items/uiMap', type: 'object', additionalProperties: { type: 'string' } } },
+            },
+          },
+        },
+      },
+    },
+  };
+  const form = (properties) => ({ propertyMetadata: { properties } });
+  const select = (schemaId) => ({ schemaId, formElement: 'SelectInputText', items: { dataset: 'devices' } });
+
+  it("walks a dictionary key the mocks named to the dictionary's values", () => {
+    const { formMetadata } = resolveSchemaIds(
+      form({ raise: select('#root/propertiesConfig/relays/raise/deviceKey') }), schema);
+    assert.equal(formMetadata.propertyMetadata.properties.raise.schemaId, '#root/relays/additionalProperties/deviceKey');
+  });
+
+  it('reads patternProperties as the values of a dictionary, and leaves out an unnamed $id', () => {
+    const { formMetadata } = resolveSchemaIds(
+      form({ map: select('#root/propertiesConfig/scenarios/uiMap/patternProperties') }), schema);
+    // The extractor gives a string dictionary's values no $id, so there's nothing to point at
+    assert.equal(formMetadata.propertyMetadata.properties.map.schemaId, '#root/propertiesConfig/scenarios/uiMap/patternProperties');
+  });
+
+  it('matches a dictionary key against its own pattern, and leaves several matches unresolved', () => {
+    const patterned = {
+      $defs: {
+        propertiesConfig: {
+          properties: {
+            ports: {
+              $id: '#root/ports',
+              type: 'object',
+              patternProperties: {
+                '^video_': { $id: '#root/ports/video', properties: { deviceKey: { $id: '#root/ports/video/deviceKey' } } },
+                '^audio_': { $id: '#root/ports/audio', properties: { deviceKey: { $id: '#root/ports/audio/deviceKey' } } },
+              },
+              additionalProperties: { $id: '#root/ports/other', properties: { deviceKey: { $id: '#root/ports/other/deviceKey' } } },
+            },
+          },
+        },
+      },
+    };
+    const id = (schemaId) => resolveSchemaIds(form({ p: select(schemaId) }), patterned).formMetadata.propertyMetadata.properties.p.schemaId;
+    assert.equal(id('#root/ports/audio_1/deviceKey'), '#root/ports/audio/deviceKey');
+    assert.equal(id('#root/ports/aux/deviceKey'), '#root/ports/other/deviceKey');
+    // Two patterns: "patternProperties" alone can't say which
+    assert.equal(id('#root/ports/patternProperties/deviceKey'), '#root/ports/patternProperties/deviceKey');
+  });
+
+  it('walks an array of dictionaries, and a dictionary key named like a keyword', () => {
+    const nested = {
+      $defs: {
+        propertiesConfig: {
+          properties: {
+            scenarios: {
+              $id: '#root/scenarios',
+              type: 'array',
+              items: {
+                $id: '#root/scenarios/items',
+                type: 'object',
+                patternProperties: { '^.*$': { $id: '#root/scenarios/items/value', properties: { deviceKey: { $id: '#root/scenarios/items/value/deviceKey' } } } },
+              },
+            },
+            map: {
+              $id: '#root/map',
+              type: 'object',
+              additionalProperties: { $id: '#root/map/value', properties: { deviceKey: { $id: '#root/map/value/deviceKey' } } },
+            },
+          },
+        },
+      },
+    };
+    const id = (schemaId) => resolveSchemaIds(form({ p: select(schemaId) }), nested).formMetadata.propertyMetadata.properties.p.schemaId;
+    assert.equal(id('#root/propertiesConfig/scenarios/patternProperties/deviceKey'), '#root/scenarios/items/value/deviceKey');
+    assert.equal(id('#root/propertiesConfig/map/items/deviceKey'), '#root/map/value/deviceKey');
+  });
+
+  const extracted = { typeNames: { lift: facts({ schema }) } };
+
+  it("drops the baseline's formMetadata that points at nothing, with a warning", () => {
+    const baseline = {
+      typeNames: {
+        lift: {
+          formMetadata: form({
+            raise: select('#root/propertiesConfig/relays/raise/deviceKey'),
+            map: select('#root/propertiesConfig/scenarios/uiMap/patternProperties'),
+          }),
+        },
+      },
+    };
+    const { doc, report } = assemble({ facts: extracted, baseline, formSidecar: null, release });
+    assert.deepEqual(Object.keys(doc.typeNames.lift.formMetadata.propertyMetadata.properties), ['raise']);
+    const { errors, warnings } = gate({ doc, facts: extracted, formSidecar: null, report });
+    assert.deepEqual(errors, []);
+    assert.match(warnings[0], /lift: left out the baseline's formMetadata for map/);
+  });
+
+  it('drops formMetadata altogether when nothing in it is left', () => {
+    const baseline = { typeNames: { lift: { formMetadata: form({ map: select('#root/gone') }) } } };
+    const { doc } = assemble({ facts: extracted, baseline, formSidecar: null, release });
+    assert.equal(doc.typeNames.lift.formMetadata, undefined);
+  });
+
+  it("still fails on the repo's own sidecar when it points at nothing", () => {
+    const formSidecar = { typeNames: { lift: form({ map: select('#root/gone') }) } };
+    const { doc, report } = assemble({ facts: extracted, baseline: null, formSidecar, release });
+    assert.match(gate({ doc, facts: extracted, formSidecar, report }).errors[0], /points at #root\/gone/);
+  });
+});
+
+describe('declared typeNames', () => {
+  const extracted = { typeNames: { testDevice: facts() } };
+  const processor = { label: 'RMC4', interfaces: ['IControlSystem'], schema: schemaWith('host') };
+  const typeNamesSidecar = { typeNames: { rmc4: processor } };
+
+  it('adds them next to the factory typeNames, and passes the gate', () => {
+    const { doc, report } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar, release });
+    assert.deepEqual(Object.keys(doc.typeNames).sort(), ['rmc4', 'testDevice']);
+    assert.deepEqual(doc.typeNames.rmc4, processor);
+    assert.equal(report.rmc4.sources.declared, true);
+    assert.deepEqual(gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar, report }), { errors: [], warnings: [] });
+  });
+
+  it('asks the agent about nothing for them', () => {
+    const { doc, report } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar, release });
+    assert.ok(!findGaps({ doc, report, facts: extracted }).some((g) => g.typeName === 'rmc4'));
+  });
+
+  it("fills what the declaration leaves out from the baseline, and takes the form sidecar's formMetadata", () => {
+    const baseline = { typeNames: { RMC4: { description: 'From the baseline', label: 'Old label' } } };
+    const formSidecar = { typeNames: { rmc4: formEntry('#root/host') } };
+    const { doc } = assemble({ facts: extracted, baseline, formSidecar, typeNamesSidecar, release });
+    assert.equal(doc.typeNames.rmc4.label, 'RMC4');
+    assert.equal(doc.typeNames.rmc4.description, 'From the baseline');
+    assert.equal(doc.typeNames.rmc4.formMetadata.propertyMetadata.properties.host.schemaId, '#root/host');
+  });
+
+  it("keeps the baseline's routing ports when a declaration has none", () => {
+    const baseline = { typeNames: { rmc4: { routingPorts: { inputs: [port('HdmiIn1')], outputs: [] } } } };
+    const { doc, report } = assemble({ facts: extracted, baseline, formSidecar: null, typeNamesSidecar, release });
+    assert.deepEqual(doc.typeNames.rmc4.routingPorts, baseline.typeNames.rmc4.routingPorts);
+    assert.equal(report.rmc4.sources.routingPorts, 'baseline');
+    const declaredPorts = { typeNames: { rmc4: { ...processor, routingPorts: { inputs: [], outputs: [port('HdmiOut')] } } } };
+    const declared = assemble({ facts: extracted, baseline, formSidecar: null, typeNamesSidecar: declaredPorts, release });
+    assert.deepEqual(declared.doc.typeNames.rmc4.routingPorts.outputs.map((p) => p.name), ['HdmiOut']);
+    assert.equal(declared.report.rmc4.sources.routingPorts, 'declared');
+  });
+
+  it('fails two declarations that differ only in case', () => {
+    const sidecar = { typeNames: { rmc4: processor, RMC4: processor } };
+    const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar: sidecar, release });
+    const { errors } = gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar: sidecar });
+    assert.ok(errors.some((e) => /RMC4 and rmc4 differ only in case/.test(e)));
+  });
+
+  it('fails a declaration of a factory typeName, in any case', () => {
+    const sidecar = { typeNames: { TestDevice: processor } };
+    const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar: sidecar, release });
+    assert.equal(doc.typeNames.TestDevice, undefined);
+    const { errors } = gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar: sidecar });
+    assert.match(errors[0], /TestDevice is also a factory TypeName \(testDevice\)/);
+  });
+
+  it('fails a declaration the schema rejects', () => {
+    const sidecar = { typeNames: { rmc4: { label: 'RMC4' } } };
+    const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar: sidecar, release });
+    const { errors } = gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar: sidecar });
+    assert.ok(errors.some((e) => e.startsWith('.pepperdash/type-names.json:')));
+  });
+});
