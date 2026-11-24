@@ -38,6 +38,10 @@ env:
 jobs:
   Build_Project_4-Series:
     runs-on: windows-latest
+    outputs:
+      # success only when the release and its files were uploaded; the step can fail without
+      # failing the build (continue-on-error), so the metadata job checks this, not the job result
+      release: ${{ steps.create_release.outcome }}
     steps:
       # ---------------------------
       - name: Checkout repo
@@ -243,6 +247,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
+          artifactErrorsFailBuild: true
           artifacts: 'output\**\*.*(cpz|cplz)'          
           prerelease: ${{ inputs.channel != '' }}
           tag: ${{ inputs.tag }}
@@ -333,6 +338,7 @@ jobs:
     needs: Build_Project_4-Series
     if: >-
       inputs.newVersion == 'true' && inputs.metadataKind != 'none' &&
+      needs.Build_Project_4-Series.outputs.release == 'success' &&
       contains(fromJSON('["PepperDash","PepperDash-Services","PepperDash-Engineering"]'), github.repository_owner)
     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
     secrets: inherit

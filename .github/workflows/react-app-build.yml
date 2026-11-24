@@ -166,6 +166,8 @@ jobs:
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
           allowUpdates: true
+          # A release without its .zip fails the build, so the metadata job never registers one
+          artifactErrorsFailBuild: true
 
   # ---------------------------
   # Generates pepperdash-metadata.json for the new release and registers it with Portal

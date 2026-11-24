@@ -6,7 +6,7 @@ The document's format is defined by [`schemas/pepperdash-metadata.v1.schema.json
 
 ## Which releases get it
 
-The 4-series build (`essentialsplugins-4Series-builds.yml`) and the React build (`react-app-build.yml`) call this workflow after a successful build that made a new release, for repos in the PepperDash, PepperDash-Services and PepperDash-Engineering organizations. A repo that calls either build gets release metadata without changing its own workflows.
+The 4-series build (`essentialsplugins-4Series-builds.yml`) and the React build (`react-app-build.yml`) call this workflow after a build that made a new release and uploaded its files, for repos in the PepperDash, PepperDash-Services and PepperDash-Engineering organizations. A repo that calls either build gets release metadata without changing its own workflows.
 
 | Build | `kind` | Set with its `metadataKind` input |
 |---|---|---|
