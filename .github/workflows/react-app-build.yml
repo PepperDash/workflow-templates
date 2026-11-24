@@ -19,6 +19,11 @@ on:
         description: 'The channel of the image to build and push'
         required: true
         type: string
+      metadataKind:
+        description: 'What Portal registers the release as: userInterface or touchpanelWrapper, or none to skip the release metadata'
+        required: false
+        type: string
+        default: userInterface
 jobs:
   Build:
     runs-on: ubuntu-latest
@@ -161,3 +166,19 @@ jobs:
           tag: ${{ inputs.tag }}
           commit: ${{ github.sha }}
           allowUpdates: true
+          # A release without its .zip fails the build, so the metadata job never registers one
+          artifactErrorsFailBuild: true
+
+  # ---------------------------
+  # Generates pepperdash-metadata.json for the new release and registers it with Portal
+  # (docs/pepperdash-metadata-workflow.md). A user interface has no device types, so nothing is built
+  Release_Metadata:
+    needs: Build
+    if: >-
+      inputs.newVersion == 'true' && inputs.metadataKind != 'none' &&
+      contains(fromJSON('["PepperDash","PepperDash-Services","PepperDash-Engineering"]'), github.repository_owner)
+    uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag }}
+      kind: ${{ inputs.metadataKind }}

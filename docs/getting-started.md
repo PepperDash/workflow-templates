@@ -53,16 +53,17 @@ Determine which workflow type is appropriate for your project:
 
 - **For Essentials Plugins**:
   - Use a plugin-specific caller
-  - Reference `essentialsplugins-3Series-builds.yml` for 3-Series builds
-  - Reference `essentialsplugins-4Series-builds.yml` for 4-Series builds
+  - Reference `essentialsplugins-4Series-builds.yml` on branches that target Essentials 2.x or later
+  - Reference `essentialsplugins-3Series-builds.yml` instead on branches that target Essentials 1.x
+  - Never both on the same branch
 
 ### 3. Create Workflow Caller File
 
 Create a workflow caller file in the `.github/workflows` directory. Examples are provided below.
 
-#### 3.1 For Essentials Plugins (Both 3-Series and 4-Series)
+#### 3.1 For Essentials Plugins
 
-Create a file named `.github/workflows/essentialsplugins-builds-caller.yml`:
+Create a file named `.github/workflows/essentialsplugins-builds-caller.yml`. Each branch calls **one** of the builds, depending on the Essentials version it targets: `essentialsplugins-3Series-builds.yml` for Essentials 1.x, `essentialsplugins-4Series-builds.yml` for every later version. Never call both: they upload to the same release, and only the 4-series build generates the [release metadata](pepperdash-metadata-workflow.md) Portal uses.
 
 ```yaml
 name: Build Essentials Plugin
@@ -77,18 +78,6 @@ jobs:
   getVersion:
     uses: PepperDash/workflow-templates/.github/workflows/essentialsplugins-getversion.yml@main
     secrets: inherit    
-  
-  # 3-Series caller
-  build-3Series:  
-    uses: PepperDash/workflow-templates/.github/workflows/essentialsplugins-3Series-builds.yml@main    
-    secrets: inherit
-    needs: getVersion
-    if: needs.getVersion.outputs.newVersion == 'true'
-    with:
-      newVersion: ${{ needs.getVersion.outputs.newVersion }}
-      version: ${{ needs.getVersion.outputs.version }}
-      tag: ${{ needs.getVersion.outputs.tag }}
-      channel: ${{ needs.getVersion.outputs.channel }}
   
   # 4-Series caller
   build-4Series:

@@ -94,6 +94,7 @@ build-3Series:
 - Compiles plugin projects targeting 4-Series processors
 - Creates distribution packages
 - Publishes to appropriate registries
+- Generates and registers the release's metadata with Portal ([pepperdash-metadata-workflow.md](pepperdash-metadata-workflow.md))
 
 **Inputs**:
 - `newVersion`: Boolean indicating if this is a new version
@@ -101,6 +102,8 @@ build-3Series:
 - `tag`: Git tag for the version
 - `channel`: Release channel
 - `bypassPackageCheck`: Optional boolean to bypass package name validation
+- `devToolsVersion`: Optional essentials-devtools release to embed in the CPZ
+- `metadataKind`: Optional; `plugin`, `essentials`, or `none` to skip the release metadata. Empty means `essentials` for PepperDash/Essentials, otherwise `plugin`
 
 **Usage**:
 ```yaml
@@ -170,7 +173,7 @@ check-commit:
 ```yaml
 update-readme:
   uses: PepperDash/workflow-templates/.github/workflows/update-readme.yml@main
-  needs: [build-3Series, build-4Series]
+  needs: build-4Series
   with:
     version: ${{ needs.getVersion.outputs.version }}
 ```
