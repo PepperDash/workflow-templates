@@ -532,6 +532,59 @@ describe('schemaIds through dictionaries', () => {
     assert.equal(formMetadata.propertyMetadata.properties.map.schemaId, '#root/propertiesConfig/scenarios/uiMap/patternProperties');
   });
 
+  it('matches a dictionary key against its own pattern, and leaves several matches unresolved', () => {
+    const patterned = {
+      $defs: {
+        propertiesConfig: {
+          properties: {
+            ports: {
+              $id: '#root/ports',
+              type: 'object',
+              patternProperties: {
+                '^video_': { $id: '#root/ports/video', properties: { deviceKey: { $id: '#root/ports/video/deviceKey' } } },
+                '^audio_': { $id: '#root/ports/audio', properties: { deviceKey: { $id: '#root/ports/audio/deviceKey' } } },
+              },
+              additionalProperties: { $id: '#root/ports/other', properties: { deviceKey: { $id: '#root/ports/other/deviceKey' } } },
+            },
+          },
+        },
+      },
+    };
+    const id = (schemaId) => resolveSchemaIds(form({ p: select(schemaId) }), patterned).formMetadata.propertyMetadata.properties.p.schemaId;
+    assert.equal(id('#root/ports/audio_1/deviceKey'), '#root/ports/audio/deviceKey');
+    assert.equal(id('#root/ports/aux/deviceKey'), '#root/ports/other/deviceKey');
+    // Two patterns: "patternProperties" alone can't say which
+    assert.equal(id('#root/ports/patternProperties/deviceKey'), '#root/ports/patternProperties/deviceKey');
+  });
+
+  it('walks an array of dictionaries, and a dictionary key named like a keyword', () => {
+    const nested = {
+      $defs: {
+        propertiesConfig: {
+          properties: {
+            scenarios: {
+              $id: '#root/scenarios',
+              type: 'array',
+              items: {
+                $id: '#root/scenarios/items',
+                type: 'object',
+                patternProperties: { '^.*$': { $id: '#root/scenarios/items/value', properties: { deviceKey: { $id: '#root/scenarios/items/value/deviceKey' } } } },
+              },
+            },
+            map: {
+              $id: '#root/map',
+              type: 'object',
+              additionalProperties: { $id: '#root/map/value', properties: { deviceKey: { $id: '#root/map/value/deviceKey' } } },
+            },
+          },
+        },
+      },
+    };
+    const id = (schemaId) => resolveSchemaIds(form({ p: select(schemaId) }), nested).formMetadata.propertyMetadata.properties.p.schemaId;
+    assert.equal(id('#root/propertiesConfig/scenarios/patternProperties/deviceKey'), '#root/scenarios/items/value/deviceKey');
+    assert.equal(id('#root/propertiesConfig/map/items/deviceKey'), '#root/map/value/deviceKey');
+  });
+
   const extracted = { typeNames: { lift: facts({ schema }) } };
 
   it("drops the baseline's formMetadata that points at nothing, with a warning", () => {
@@ -590,6 +643,24 @@ describe('declared typeNames', () => {
     assert.equal(doc.typeNames.rmc4.label, 'RMC4');
     assert.equal(doc.typeNames.rmc4.description, 'From the baseline');
     assert.equal(doc.typeNames.rmc4.formMetadata.propertyMetadata.properties.host.schemaId, '#root/host');
+  });
+
+  it("keeps the baseline's routing ports when a declaration has none", () => {
+    const baseline = { typeNames: { rmc4: { routingPorts: { inputs: [port('HdmiIn1')], outputs: [] } } } };
+    const { doc, report } = assemble({ facts: extracted, baseline, formSidecar: null, typeNamesSidecar, release });
+    assert.deepEqual(doc.typeNames.rmc4.routingPorts, baseline.typeNames.rmc4.routingPorts);
+    assert.equal(report.rmc4.sources.routingPorts, 'baseline');
+    const declaredPorts = { typeNames: { rmc4: { ...processor, routingPorts: { inputs: [], outputs: [port('HdmiOut')] } } } };
+    const declared = assemble({ facts: extracted, baseline, formSidecar: null, typeNamesSidecar: declaredPorts, release });
+    assert.deepEqual(declared.doc.typeNames.rmc4.routingPorts.outputs.map((p) => p.name), ['HdmiOut']);
+    assert.equal(declared.report.rmc4.sources.routingPorts, 'declared');
+  });
+
+  it('fails two declarations that differ only in case', () => {
+    const sidecar = { typeNames: { rmc4: processor, RMC4: processor } };
+    const { doc } = assemble({ facts: extracted, baseline: null, formSidecar: null, typeNamesSidecar: sidecar, release });
+    const { errors } = gate({ doc, facts: extracted, formSidecar: null, typeNamesSidecar: sidecar });
+    assert.ok(errors.some((e) => /RMC4 and rmc4 differ only in case/.test(e)));
   });
 
   it('fails a declaration of a factory typeName, in any case', () => {

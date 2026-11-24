@@ -121,25 +121,53 @@ function idsByPath(ids, options) {
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-/** A dictionary's value schema: additionalProperties, else the first patternProperties entry */
-function dictionaryValue(node) {
-  if (isObject(node?.additionalProperties)) return node.additionalProperties;
-  const patterns = Object.values(node?.patternProperties ?? {});
-  return isObject(patterns[0]) ? patterns[0] : undefined;
+/** A node's patternProperties value schemas whose pattern matches the key, ignoring case as paths do */
+function patternsMatching(node, key) {
+  return Object.entries(node?.patternProperties ?? {})
+    .filter(([pattern, value]) => {
+      if (!isObject(value)) return false;
+      try {
+        return new RegExp(pattern, 'i').test(key);
+      } catch {
+        return false;
+      }
+    })
+    .map(([, value]) => value);
+}
+
+/** The only one of a list, or undefined when there's none or it's ambiguous */
+const only = (values) => (values.length === 1 ? values[0] : undefined);
+
+/**
+ * The value schema a dictionary key reaches: the one patternProperties schema whose pattern
+ * matches it, else additionalProperties. Undefined when several patterns match.
+ */
+function dictionaryValueFor(node, key) {
+  const matching = patternsMatching(node, key);
+  if (matching.length) return only(matching);
+  return isObject(node?.additionalProperties) ? node.additionalProperties : undefined;
 }
 
 /** One path segment down from a schema node, or undefined */
 function stepInto(node, segment) {
   if (!isObject(node)) return undefined;
-  if (segment === 'items') return isObject(node.items) ? node.items : undefined;
-  if (segment === 'additionalproperties' || segment === 'patternproperties') return dictionaryValue(node);
+  // A segment that names a schema keyword only counts when the node has it; otherwise it may
+  // still be a property, an array element's property or a dictionary key of that name
+  if (segment === 'items' && isObject(node.items)) return node.items;
+  if (segment === 'additionalproperties' && isObject(node.additionalProperties)) return node.additionalProperties;
+  const patterns = Object.values(node.patternProperties ?? {}).filter(isObject);
+  // With several patterns, "patternProperties" doesn't say which one: unresolved
+  if (segment === 'patternproperties' && patterns.length) return only(patterns);
   const property = Object.entries(node.properties ?? {}).find(([name]) => name.toLowerCase() === segment)?.[1];
   if (isObject(property)) return property;
   // A path that leaves out an array's "items"
-  if (isObject(node.items)) return stepInto(node.items, segment);
+  if (isObject(node.items)) {
+    const inItems = stepInto(node.items, segment);
+    if (inItems) return inItems;
+  }
   // A dictionary key: the mocks named the keys a dictionary is expected to hold (relays/raise),
   // where a schema built from a Dictionary<string, T> only describes its values
-  return dictionaryValue(node);
+  return dictionaryValueFor(node, segment);
 }
 
 /**
@@ -329,8 +357,11 @@ export function assembleDeclaredTypeName(declared, baseline, formSidecarEntry) {
   const { formMetadata: declaredForm, ...rest } = structuredClone(declared);
   const entry = { ...rest };
   const sources = { declared: true, schema: 'declared', interfaces: 'declared', routingPorts: 'declared' };
-  for (const field of ['label', 'description', ...CARRIED_FIELDS]) {
-    if (entry[field] === undefined && baseline?.[field] !== undefined) entry[field] = baseline[field];
+  for (const field of ['label', 'description', 'routingPorts', ...CARRIED_FIELDS]) {
+    if (entry[field] === undefined && baseline?.[field] !== undefined) {
+      entry[field] = baseline[field];
+      if (field === 'routingPorts') sources.routingPorts = 'baseline';
+    }
   }
   addFormMetadata(entry, sources, [
     ['sidecar', formSidecarEntry],
@@ -659,6 +690,11 @@ export function gate({ doc, facts, formSidecar, typeNamesSidecar, report = {} })
   if (!NO_DEVICE_KINDS.includes(doc.kind)) {
     const factoryNames = Object.keys(facts.typeNames);
     const declaredNames = Object.keys(typeNamesSidecar?.typeNames ?? {});
+    // Essentials matches typeNames ignoring case, so these would be two entries for one device type
+    declaredNames.forEach((typeName, i) => {
+      const earlier = declaredNames.slice(0, i).find((t) => t.toLowerCase() === typeName.toLowerCase());
+      if (earlier) errors.push(`.pepperdash/type-names.json: ${typeName} and ${earlier} differ only in case; keep one`);
+    });
     for (const typeName of declaredNames) {
       const factory = factoryNames.find((t) => t.toLowerCase() === typeName.toLowerCase());
       if (factory) errors.push(`.pepperdash/type-names.json: ${typeName} is also a factory TypeName (${factory}); remove the declaration`);
