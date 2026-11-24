@@ -332,8 +332,9 @@ jobs:
   # ---------------------------
   # Generates pepperdash-metadata.json for the new release and registers it with Portal
   # (docs/pepperdash-metadata-workflow.md). Its jobs ask for id-token: write, which GitHub checks
-  # before the run starts: a caller that restricts its permissions must grant id-token: write and
-  # contents: write, or the whole run fails to start. Callers that don't set permissions get both.
+  # before the run starts: a caller that restricts its permissions (at the top of its workflow or on
+  # the job that calls this one) must grant id-token: write and contents: write, or the whole run
+  # fails to start. Callers that set no permissions anywhere get both.
   Release_Metadata:
     needs: Build_Project_4-Series
     if: >-
