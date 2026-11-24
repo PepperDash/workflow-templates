@@ -47,25 +47,54 @@ For a repo that doesn't use those builds (the touchpanel wrapper app has its own
 
 ## Regenerating and withdrawing
 
-These run from a workflow in the repo itself, on its default branch. To regenerate an existing release's metadata (for example one released before this workflow existed), add a `workflow_dispatch` trigger with a `tag` input that calls this workflow the same way.
+These run from a workflow in the repo itself: GitHub only runs `workflow_dispatch` and `release` triggers from the workflow file on the default branch. Add this as `.github/workflows/pepperdash-metadata-caller.yml`:
 
-To withdraw a release from Portal when its GitHub release is deleted:
+- A manual run with a `tag` regenerates that release's metadata and registers it again, for example for a release made before this workflow existed.
+- Deleting a GitHub release withdraws it from Portal's catalog. Its files and metadata stay in Portal, so configs that use it still resolve.
 
 ```yaml
+name: PepperDash Release Metadata
+
+# Regenerates the metadata for an existing release, and withdraws a release from Portal when its
+# GitHub release is deleted. New releases get theirs from the build workflow.
+# Both triggers only run from the default branch.
+
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag, e.g. v4.0.0-feature-v3-migration.5'
+        required: true
+        type: string
   release:
     types: [deleted]
 
 jobs:
-  withdraw:
+  metadata:
+    if: github.event_name == 'workflow_dispatch'
     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
     permissions:
-      contents: read
+      contents: write   # attach pepperdash-metadata.json to the release
+      id-token: write   # GitHub OIDC token for UDM
+    with:
+      tag: ${{ inputs.tag }}
+
+  withdraw:
+    if: github.event_name == 'release'
+    uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
+    # GitHub checks every job in the called workflow against these before the run starts, and its
+    # publish job asks for contents: write, even though only its withdraw job runs here
+    permissions:
+      contents: write
       id-token: write
     with:
       tag: ${{ github.event.release.tag_name }}
       mode: withdraw
 ```
+
+The `withdraw` job needs `contents: write` although it only reads. GitHub checks every job in this workflow (`publish` asks for `contents: write`) against the caller's permissions before the run starts, whatever the `if:` conditions say. A read-only grant stops every run of the file, manual ones included.
+
+The example is for a plugin. For Essentials, add `kind: essentials` and `package-id: PepperDashEssentials` under both jobs' `with:`; for a user interface or the touchpanel wrapper, add `kind: userInterface` or `kind: touchpanelWrapper`.
 
 ## Inputs
 
