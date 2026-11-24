@@ -63,7 +63,9 @@ To use these workflows in your project:
 
 2. Create a caller YAML file in the `.github/workflows` directory:
 
-### Example: Essentials Plugin with both 3-Series and 4-Series Support
+### Example: Essentials Plugin
+
+Each branch calls **one** of the builds, depending on the Essentials version it targets: `essentialsplugins-3Series-builds.yml` for Essentials 1.x, `essentialsplugins-4Series-builds.yml` for every later version. Never call both: they upload to the same release, and only the 4-series build generates the [release metadata](pepperdash-metadata-workflow.md) Portal uses.
 
 ```yaml
 name: Build Essentials Plugin
@@ -78,18 +80,6 @@ jobs:
   getVersion:
     uses: PepperDash/workflow-templates/.github/workflows/essentialsplugins-getversion.yml@main
     secrets: inherit    
-  
-  # 3-Series caller
-  build-3Series:  
-    uses: PepperDash/workflow-templates/.github/workflows/essentialsplugins-3Series-builds.yml@main    
-    secrets: inherit
-    needs: getVersion
-    if: needs.getVersion.outputs.newVersion == 'true'
-    with:
-      newVersion: ${{ needs.getVersion.outputs.newVersion }}
-      version: ${{ needs.getVersion.outputs.version }}
-      tag: ${{ needs.getVersion.outputs.tag }}
-      channel: ${{ needs.getVersion.outputs.channel }}
   
   # 4-Series caller
   build-4Series:

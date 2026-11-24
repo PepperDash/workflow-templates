@@ -173,7 +173,7 @@ check-commit:
 ```yaml
 update-readme:
   uses: PepperDash/workflow-templates/.github/workflows/update-readme.yml@main
-  needs: [build-3Series, build-4Series]
+  needs: build-4Series
   with:
     version: ${{ needs.getVersion.outputs.version }}
 ```
