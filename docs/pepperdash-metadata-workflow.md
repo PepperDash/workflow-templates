@@ -47,17 +47,21 @@ For a repo that doesn't use those builds (the touchpanel wrapper app has its own
 
 ## Regenerating and withdrawing
 
-These run from a workflow in the repo itself: GitHub only runs `workflow_dispatch` and `release` triggers from the workflow file on the default branch. Add this as `.github/workflows/pepperdash-metadata-caller.yml`:
+A workflow in the repo itself regenerates or withdraws an existing release. Add this as `.github/workflows/pepperdash-metadata-caller.yml`:
 
-- A manual run with a `tag` regenerates that release's metadata and registers it again, for example for a release made before this workflow existed.
-- Deleting a GitHub release withdraws it from Portal's catalog. Its files and metadata stay in Portal, so configs that use it still resolve.
+- **A manual run** takes a `tag` and a `mode`. `publish` regenerates that release's metadata and registers it again, for example for a release made before this workflow existed. `withdraw` removes the release from Portal's catalog. GitHub only offers a manual run once the file is on the default branch.
+- **Deleting a GitHub release** withdraws it from Portal. GitHub runs this file from the deleted release's tagged commit, not the default branch, so this only works for releases tagged after the file was added. Withdraw older releases with a manual run.
+
+A withdrawn release's files and metadata stay in Portal, so configs that use it still resolve.
 
 ```yaml
 name: PepperDash Release Metadata
 
-# Regenerates the metadata for an existing release, and withdraws a release from Portal when its
-# GitHub release is deleted. New releases get theirs from the build workflow.
-# Both triggers only run from the default branch.
+# Regenerates the metadata for an existing release or withdraws it from Portal (a manual run, which
+# GitHub only offers once this file is on the default branch), and withdraws a release from Portal
+# when its GitHub release is deleted. A deleted release runs this file from its tagged commit, so it
+# only withdraws releases tagged after this file was added; withdraw older ones with a manual run.
+# New releases get their metadata from the build workflow.
 
 on:
   workflow_dispatch:
@@ -66,6 +70,12 @@ on:
         description: 'The release tag, e.g. v4.0.0-feature-v3-migration.5'
         required: true
         type: string
+      mode:
+        description: 'publish regenerates and registers the metadata; withdraw removes the release from Portal'
+        required: true
+        type: choice
+        options: [publish, withdraw]
+        default: publish
   release:
     types: [deleted]
 
@@ -75,9 +85,11 @@ jobs:
     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
     permissions:
       contents: write   # attach pepperdash-metadata.json to the release
-      id-token: write   # GitHub OIDC token for UDM
+      id-token: write   # GitHub OIDC tokens for UDM and the AI agent
+    secrets: inherit    # ANTHROPIC_API_KEY for the AI agent, only if the org doesn't use workload identity federation
     with:
       tag: ${{ inputs.tag }}
+      mode: ${{ inputs.mode }}
 
   withdraw:
     if: github.event_name == 'release'
@@ -92,7 +104,7 @@ jobs:
       mode: withdraw
 ```
 
-The `withdraw` job needs `contents: write` although it only reads. GitHub checks every job in this workflow (`publish` asks for `contents: write`) against the caller's permissions before the run starts, whatever the `if:` conditions say. A read-only grant stops every run of the file, manual ones included.
+The `withdraw` job needs `contents: write` although it only reads. GitHub checks every job in the called workflow (`publish` asks for `contents: write`) against the caller's permissions before the run starts, whatever the `if:` conditions say. A read-only grant stops every run of the file, manual ones included.
 
 The example is for a plugin. For Essentials, add `kind: essentials` and `package-id: PepperDashEssentials` under both jobs' `with:`; for a user interface or the touchpanel wrapper, add `kind: userInterface` or `kind: touchpanelWrapper`.
 
