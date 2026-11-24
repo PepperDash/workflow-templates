@@ -4,13 +4,36 @@ Generates `pepperdash-metadata.json` for one GitHub release, attaches it to the 
 
 The document's format is defined by [`schemas/pepperdash-metadata.v1.schema.json`](../schemas/pepperdash-metadata.v1.schema.json).
 
-## Adding it to a plugin
+## Which releases get it
 
-Add a job after the 4-series build. The calling job must grant both permissions: the reusable workflow can't raise them.
+The 4-series build (`essentialsplugins-4Series-builds.yml`) and the React build (`react-app-build.yml`) call this workflow after a successful build that made a new release, for repos in the PepperDash, PepperDash-Services and PepperDash-Engineering organizations. A repo that calls either build gets release metadata without changing its own workflows.
+
+| Build | `kind` | Set with its `metadataKind` input |
+|---|---|---|
+| `essentialsplugins-4Series-builds.yml` | `essentials` for PepperDash/Essentials, otherwise `plugin` | `plugin`, `essentials`, or `none` to skip |
+| `react-app-build.yml` | `userInterface` | `userInterface`, `touchpanelWrapper`, or `none` to skip |
+
+**Permissions.** This workflow's jobs ask for `id-token: write` and `contents: write`, and GitHub checks that before the run starts. A caller job that doesn't set `permissions:` gets both, as long as the repo's default workflow permissions are read and write. A caller that sets `permissions:` on its build job, or a repo whose default is read-only, must grant both, or the **whole build fails to start**, not only the metadata:
+
+```yaml
+  build-4Series:
+    uses: PepperDash/workflow-templates/.github/workflows/essentialsplugins-4Series-builds.yml@main
+    permissions:
+      contents: write   # the release, and pepperdash-metadata.json on it
+      packages: write   # the GitHub Packages NuGet feed
+      id-token: write   # GitHub OIDC tokens for UDM and the AI agent
+    secrets: inherit
+```
+
+A metadata failure fails the build run, although the release and its files are already published. Re-run the failed jobs, or regenerate the release with the dispatch workflow below.
+
+## Calling it directly
+
+For a repo that doesn't use those builds (the touchpanel wrapper app has its own), add a job after the step that creates the release:
 
 ```yaml
   metadata:
-    needs: [getVersion, build-4Series]
+    needs: [getVersion, build]
     if: needs.getVersion.outputs.newVersion == 'true'
     uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
     permissions:
@@ -19,7 +42,12 @@ Add a job after the 4-series build. The calling job must grant both permissions:
     secrets: inherit    # ANTHROPIC_API_KEY for the AI agent, only if the org doesn't use workload identity federation
     with:
       tag: ${{ needs.getVersion.outputs.tag }}
+      kind: touchpanelWrapper
 ```
+
+## Regenerating and withdrawing
+
+These run from a workflow in the repo itself, on its default branch. To regenerate an existing release's metadata (for example one released before this workflow existed), add a `workflow_dispatch` trigger with a `tag` input that calls this workflow the same way.
 
 To withdraw a release from Portal when its GitHub release is deleted:
 
@@ -38,6 +66,8 @@ jobs:
       tag: ${{ github.event.release.tag_name }}
       mode: withdraw
 ```
+
+## Inputs
 
 | Input | Default | |
 |---|---|---|

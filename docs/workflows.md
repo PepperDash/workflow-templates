@@ -48,7 +48,7 @@ The repository provides several reusable workflows for building and versioning P
 - **essentialsplugins-checkCommitMessage.yml**: Validates commit messages
 - **projects-4series-builds.yml**: Generic 4-Series project builds
 - **update-readme.yml**: Updates README file with build status and other information
-- **pepperdash-metadata.yml**: Generates `pepperdash-metadata.json` for a release and registers the release with Portal; see [pepperdash-metadata-workflow.md](pepperdash-metadata-workflow.md)
+- **pepperdash-metadata.yml**: Generates `pepperdash-metadata.json` for a release and registers the release with Portal. The 4-series and React builds call it for new releases; see [pepperdash-metadata-workflow.md](pepperdash-metadata-workflow.md)
 
 ## Implementation Guide
 

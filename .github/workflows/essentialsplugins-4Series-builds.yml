@@ -27,7 +27,12 @@ on:
         description: 'Version tag of essentials-devtools release to embed in the CPZ (e.g. v1.0.0). Leave empty to skip.'
         required: false
         type: string
-      
+      metadataKind:
+        description: 'What Portal registers the release as: plugin or essentials, or none to skip the release metadata. Empty: essentials for the Essentials repo, otherwise plugin.'
+        required: false
+        type: string
+        default: ''
+
 env:
   BUILD_TYPE: ${{ inputs.channel == '' && 'Release' || 'Debug' }}
 jobs:
@@ -318,3 +323,19 @@ jobs:
               exit 1
             }
           }
+
+  # ---------------------------
+  # Generates pepperdash-metadata.json for the new release and registers it with Portal
+  # (docs/pepperdash-metadata-workflow.md). Its jobs ask for id-token: write, which GitHub checks
+  # before the run starts: a caller that restricts its permissions must grant id-token: write and
+  # contents: write, or the whole run fails to start. Callers that don't set permissions get both.
+  Release_Metadata:
+    needs: Build_Project_4-Series
+    if: >-
+      inputs.newVersion == 'true' && inputs.metadataKind != 'none' &&
+      contains(fromJSON('["PepperDash","PepperDash-Services","PepperDash-Engineering"]'), github.repository_owner)
+    uses: PepperDash/workflow-templates/.github/workflows/pepperdash-metadata.yml@main
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag }}
+      kind: ${{ inputs.metadataKind != '' && inputs.metadataKind || (github.repository == 'PepperDash/Essentials' && 'essentials' || 'plugin') }}

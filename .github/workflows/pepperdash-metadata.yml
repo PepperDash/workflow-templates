@@ -5,7 +5,8 @@ name: PepperDash Release Metadata
 # Portal's UDM API in every environment listed in the PEPPERDASH_UDM_URLS Actions variable.
 # See docs/pepperdash-metadata-workflow.md.
 #
-# Call it after the release's files are uploaded, from a job that grants
+# essentialsplugins-4Series-builds.yml and react-app-build.yml call it for each new release. To call
+# it from another build, do it after the release's files are uploaded, from a job that grants
 #   permissions: { contents: write, id-token: write }
 # and, for the AI agent to fill what the code doesn't, has the ANTHROPIC_FEDERATION_RULE_ID and
 # ANTHROPIC_ORGANIZATION_ID Actions variables (workload identity federation), or passes
