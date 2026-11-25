@@ -78,7 +78,10 @@ async function call(method, url, body, { gzip = false } = {}) {
   }
   if (!response.ok) {
     const detail = json?.error ? `${json.error}${json.details ? ` ${JSON.stringify(json.details)}` : ''}` : text.slice(0, 300);
-    throw new Error(`${method} ${new URL(url).pathname}: ${response.status} ${detail}`);
+    throw Object.assign(new Error(`${method} ${new URL(url).pathname}: ${response.status} ${detail}`), {
+      status: response.status,
+      error: json?.error,
+    });
   }
   return json;
 }
@@ -122,10 +125,22 @@ async function register(base, doc) {
 }
 
 async function withdraw(base) {
-  const result = await call('DELETE', `${base}/v3/essentials/releases`, {
-    repoUrl: args['repo-url'],
-    version: args.version,
-  });
+  let result;
+  try {
+    result = await call('DELETE', `${base}/v3/essentials/releases`, {
+      repoUrl: args['repo-url'],
+      version: args.version,
+    });
+  } catch (err) {
+    // The release was never registered (made before the workflow, or its registration failed), so
+    // there's nothing to withdraw. Only UDM's own answer counts: any other 404, such as a wrong URL,
+    // still fails.
+    if (err.status === 404 && err.error === 'Release not found') {
+      console.log(`::notice title=Not registered::${new URL(base).host} has no release ${args.version}; nothing to withdraw`);
+      return 'not registered; nothing to withdraw';
+    }
+    throw err;
+  }
   return `${result?.status ?? 'withdrawn'} (${result?.releaseId ?? '?'})`;
 }
 

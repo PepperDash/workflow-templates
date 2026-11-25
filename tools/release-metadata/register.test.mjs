@@ -61,6 +61,8 @@ function handler(req, res) {
       });
     }
     if (url.pathname.endsWith('/complete')) return json(200, { releaseId: `${env}-1`, version: '1.0.0', status: 'available' });
+    if (req.method === 'DELETE' && env === 'unregistered') return json(404, { error: 'Release not found' });
+    if (req.method === 'DELETE' && env === 'noroute') return json(404, { error: 'not found' });
     if (req.method === 'DELETE') return json(200, { releaseId: `${env}-1`, version: '1.0.0', status: 'withdrawn' });
     json(404, { error: 'not found' });
   });
@@ -143,5 +145,26 @@ describe('register.mjs', () => {
     const call = requests.find((r) => r.method === 'DELETE');
     assert.equal(call.path, '/first/v3/essentials/releases');
     assert.deepEqual(JSON.parse(call.body), { repoUrl: 'https://github.com/PepperDash/epi-test', version: '1.0.0' });
+  });
+
+  it('treats withdrawing a release UDM never had as a notice', async () => {
+    const summary = join(dir, 'summary-unregistered.md');
+    const result = await runScript([
+      '--urls', `${base}/unregistered`,
+      '--withdraw', '--repo-url', 'https://github.com/PepperDash/epi-test', '--version', '1.0.0',
+      '--summary', summary,
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /::notice title=Not registered::/);
+    assert.match(readFileSync(summary, 'utf8'), /not registered; nothing to withdraw/);
+  });
+
+  it('still fails a withdraw on any other 404', async () => {
+    const result = await runScript([
+      '--urls', `${base}/noroute`,
+      '--withdraw', '--repo-url', 'https://github.com/PepperDash/epi-test', '--version', '1.0.0',
+    ]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /404 not found/);
   });
 });
