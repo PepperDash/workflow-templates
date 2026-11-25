@@ -52,7 +52,7 @@ A workflow in the repo itself regenerates or withdraws an existing release. Add 
 - **A manual run** takes a `tag` and a `mode`. `publish` regenerates that release's metadata and registers it again, for example for a release made before this workflow existed. `withdraw` removes the release from Portal's catalog. GitHub only offers a manual run once the file is on the default branch.
 - **Deleting a GitHub release** withdraws it from Portal. GitHub runs this file from the deleted release's tagged commit, not the default branch, so this only works for releases tagged after the file was added. Withdraw older releases with a manual run.
 
-A withdrawn release's files and metadata stay in Portal, so configs that use it still resolve.
+A withdrawn release's files and metadata stay in Portal, so configs that use it still resolve. Withdrawing a release Portal never had, for example a deleted release whose registration failed, passes with a notice instead of failing.
 
 ```yaml
 name: PepperDash Release Metadata
